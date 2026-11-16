@@ -1,17 +1,111 @@
-:root{--ink:#14313a;--canvas:#e9f0ee;--line:rgba(20,49,58,.14)}
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;width:100%;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--canvas)}
-.search-shell{height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
-.search-header{height:70px;display:flex;align-items:center;gap:22px;background:#f7fbf9;border-bottom:1px solid var(--line);padding:0 clamp(15px,3.5vw,48px);box-shadow:0 2px 12px rgba(20,49,58,.06);z-index:2}
-.home-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink);font-weight:750;font-size:14px;white-space:nowrap}
-.home-link:hover,.external-link:hover{text-decoration:underline}
-.home-symbol{font-size:28px;font-weight:300;line-height:1}
-.search-heading{display:grid;gap:2px;padding-left:22px;border-left:1px solid var(--line)}
-.search-heading strong{font-weight:800;font-size:18px;line-height:1.1;letter-spacing:-.03em}
-.tool-label{font-size:9px;letter-spacing:.13em;color:#6e8589;font-weight:850}
-.external-link{margin-left:auto;font-size:12px;font-weight:700;text-decoration:none;color:#346a79;white-space:nowrap}
-.search-workspace{position:relative;min-height:0;min-width:0}
-#search-frame{display:block;border:0;width:100%;height:100%;background:#f8f9fb}
-.search-loading{position:absolute;inset:0;display:grid;place-items:center;z-index:1;background:#f5f8f7;color:#56747b;font-size:14px;font-weight:600;pointer-events:none}
-.search-loading[hidden]{display:none!important}
-@media(max-width:560px){.search-header{height:58px;gap:12px;padding:0 13px}.search-heading{padding-left:12px}.search-heading strong{font-size:16px}.tool-label{font-size:8px}.home-link{font-size:13px}.external-link{font-size:10px}}
+/* DriveHub Car Search shell — fills the viewport rather than using the browser's default iframe size. */
+@import url('https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700;800&display=swap');
+:root {
+  --dh-dark: #14313a;
+  --dh-bg: #e9f0ee;
+  --dh-surface: #f7fbf9;
+  --dh-ink: #14292b;
+  --dh-muted: #5c787e;
+  --dh-line: rgba(20,49,58,.14);
+  --dh-green: #2f9166;
+  --dh-font: "Figtree", system-ui, sans-serif;
+  --dh-display: "Caprasimo", Georgia, serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; }
+body { background: var(--dh-bg); color: var(--dh-ink); font: 500 14px/1.45 var(--dh-font); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+a:focus-visible { outline: 3px solid rgba(47,145,102,.6); outline-offset: 3px; }
+/* Grid sizing is deliberate: a nested iframe without it defaults to 300×150px. */
+.search-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr);
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+.search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px clamp(15px,2.5vw,34px);
+  min-height: 76px;
+  background: var(--dh-surface);
+  border-bottom: 1px solid var(--dh-line);
+  box-shadow: 0 1px 3px rgba(20,49,58,.05);
+  position: relative;
+  z-index: 3;
+}
+.search-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-logo { width: 43px; height: 43px; border-radius: 14px; box-shadow: 0 2px 8px rgba(20,49,58,.14); flex: none; }
+.search-heading { min-width: 0; display: grid; gap: 1px; }
+.search-heading .tool-label { font-size: 10px; font-weight: 800; letter-spacing: .14em; color: var(--dh-muted); }
+.search-heading strong { font: 400 clamp(23px,2.5vw,30px)/1.05 var(--dh-display); letter-spacing: -.015em; color: var(--dh-dark); }
+.search-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.home-link, .external-link {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 40px; border-radius: 12px; padding: 9px 13px;
+  text-decoration: none; font-weight: 800; font-size: 12px; white-space: nowrap;
+  transition: background .16s ease,border-color .16s ease;
+}
+.home-link { background: #fff; color: var(--dh-dark); border: 1px solid var(--dh-line); }
+.home-link:hover { background: #e5eeeb; }
+.external-link { background: var(--dh-dark); color: #fff; border: 1px solid var(--dh-dark); }
+.external-link:hover { background: #26505a; }
+.home-symbol { font-size: 19px; font-weight: 500; line-height: 0; margin-top: -2px; }
+.search-workspace {
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  grid-template: minmax(0,1fr) / minmax(0,1fr);
+  overflow: hidden;
+  position: relative;
+}
+#search-frame {
+  grid-area: 1/1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  border: 0;
+  background: var(--dh-bg);
+}
+.search-loading {
+  grid-area: 1/1;
+  place-self: stretch;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dh-muted);
+  background: var(--dh-bg);
+  z-index: 2;
+  text-align: center;
+}
+.search-loading[hidden] { display: none; }
+@media (max-width: 640px) {
+  .search-header { min-height: 70px; padding: 11px 12px; gap: 10px; }
+  .brand-logo { width: 36px; height: 36px; border-radius: 11px; }
+  .search-brand { gap: 8px; }
+  .search-heading .tool-label { font-size: 8.5px; letter-spacing: .1em; }
+  .search-heading strong { font-size: 21px; }
+  .home-link, .external-link { min-height: 38px; padding: 8px 10px; font-size: 11px; }
+  .external-link .external-label { display: none; }
+  .search-actions { gap: 7px; }
+}
+@media (max-width: 390px) {
+  .search-heading .tool-label { display: none; }
+  .search-heading strong { font-size: 19px; }
+  .search-brand { gap: 7px; }
+  .home-link .home-label { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}

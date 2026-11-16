@@ -45,6 +45,25 @@ try{
   r=await get('/search');assert.equal(r.status,308);assert.equal(r.headers.get('location'),'/search/');
   r=await get('/search/');assert.equal(r.status,200);const html=await r.text();
   assert.match(html,/<iframe[^>]+src="\/car-search-app\/"/);
+  // Regression: the previous release mistakenly served the native Node Car Search CSS
+  // for the outer tool shell. Missing .search-shell/#search-frame styles caused
+  // the iframe to render at the browser-default 300 × 150 pixels.
+  const searchCss=await get('/search/styles.css?v=14225');
+  assert.equal(searchCss.status,200,'Car Search shell stylesheet is served');
+  const shellCss=await searchCss.text();
+  assert.match(shellCss,/\.search-shell\s*\{[\s\S]*?height:\s*100dvh/s,'Car Search shell spans the full viewport');
+  assert.match(shellCss,/#search-frame\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%/s,'embedded scanner iframe fills the tool workspace');
+  assert.match(shellCss,/\.search-workspace\s*\{[\s\S]*?min-height:\s*0/s,'workspace can grow and shrink inside the viewport');
+  assert.match(html,/class="brand-logo"[^>]*drivehub-192\.png/,'Car Search uses the DriveHub mark');
+  const shellJs=await get('/search/app.js?v=14225');
+  assert.equal(shellJs.status,200);
+  assert.match(await shellJs.text(),/contentDocument\?\.readyState/,'Car Search removes its loader even if the iframe loads before JavaScript initialises');
+  const originalPage=await import('node:fs/promises').then(fs=>fs.readFile(new URL('../legacy/public/dashboard.html',import.meta.url),'utf8'));
+  const originalStyles=await import('node:fs/promises').then(fs=>fs.readFile(new URL('../legacy/public/drivehub-theme.css',import.meta.url),'utf8'));
+  assert.match(originalPage,/href="drivehub-theme\.css"/,'restored Python dashboard loads the DriveHub theme');
+  assert.match(originalStyles,/Caprasimo/,'Car Search uses the same heading font as DriveHub');
+  assert.match(originalStyles,/Figtree/,'Car Search uses the same body font as DriveHub');
+  assert.match(originalPage,/CAR SEARCH <span>\/<\/span>/,'Car Search breadcrumb no longer incorrectly says MyGarage');
   assert.match(r.headers.get('x-frame-options')||'',/DENY/);
   r=await get('/search/app.js?v=14222');assert.equal(r.status,200);
   r=await get('/search/styles.css?v=14222');assert.equal(r.status,200);
@@ -106,3 +125,4 @@ try{
   child.kill('SIGTERM');
   await new Promise(resolve=>upstream.close(resolve));
 }
+
