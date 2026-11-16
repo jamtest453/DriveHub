@@ -23,3 +23,7 @@
 .feature-card.search{background:linear-gradient(155deg,#f7fbf9 0%,#e3e7f3 100%)}
 
 .hub-footer{padding:0 20px 34px;text-align:center}.hub-footer a{font-size:12px;font-weight:750;color:#648082;text-decoration:none}.hub-footer a:hover{text-decoration:underline}
+
+/* The global header occupies the top 76/68px on every DriveHub page. */
+.hub{padding-top:calc(var(--dh-top-nav-height,76px) + 32px)}
+@media(max-width:620px){.hub{padding-top:calc(var(--dh-top-nav-height,68px) + 22px)}}

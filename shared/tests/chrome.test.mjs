@@ -26,7 +26,7 @@ assert.match(js,/const showStatus=/,'shared shell exposes a single transient out
 assert.match(js,/release\.update=/,'shared activities update in place instead of being recreated');
 assert.match(js,/if\(latest\)\{[\s\S]*activity\.dataset\.state='working'/,'working activity takes priority over queued outcomes');
 assert.match(js,/if\(transient\)\{[\s\S]*scheduleTransientHide/,'queued outcomes appear only after work has finished');
-assert.match(js,/drivehubChrome==='14221'/,'shared shell uses the v142.10 initialization guard');
+assert.match(js,/drivehubChrome==='14226'/,'shared shell uses the v142.26 initialization guard');
 assert.match(js,/beginActivity/,'shared shell exposes a reusable concurrent activity API');
 assert.match(runtime,/apiUrl\(path\)/,'shared runtime centralises API routing for browser and native shells');
 assert.match(runtime,/notifyAppReady/,'shared runtime confirms healthy native OTA bundles');
@@ -37,8 +37,8 @@ assert.match(css,/\.dh-state\{/,'shared shell exposes a common recovery and empt
 assert.match(js,/Offline — saved data is still available/,'shared shell must expose offline feedback');
 for(const rel of ['../../tools/my-garage/public/index.html','../../tools/valuation/public/index.html','../../tools/road-finder/public/index.html']){
   const html=fs.readFileSync(new URL(rel,import.meta.url),'utf8');
-  assert.match(html,/shared\/public\/drivehub-chrome\.css\?v=14221/,'every tool must load shared desktop chrome');
-  assert.match(html,/shared\/public\/drivehub-chrome\.js\?v=14221/,'every tool must load shared resilience behaviour');
+  assert.match(html,/shared\/public\/drivehub-chrome\.css\?v=14226/,'every tool must load shared desktop chrome');
+  assert.match(html,/shared\/public\/drivehub-chrome\.js\?v=14226/,'every tool must load shared resilience behaviour');
   assert.match(html,/shared\/public\/drivehub-runtime\.js\?v=14221/,'every tool must load shared browser/native runtime');
 }
 assert.match(gatewayHtml,/id="garage-live-status"/,'gateway surfaces MyGarage readiness');
@@ -50,3 +50,8 @@ assert.match(gatewayJs,/\/api\/integrations\/status/,'hosted gateway reports liv
 assert.match(gatewayHtml,/id="resume-tool"/,'gateway exposes a recent-tool continuation action');
 assert.match(gatewayJs,/Continue in \$\{recent\.label/,'gateway labels the continuation action with the last tool');
 console.log('Shared DriveHub chrome tests passed');
+
+assert.match(js,/ensureGlobalHeader=/,'every page gets the same shared header');
+assert.match(js,/path\.startsWith\('\/search\/'\)/,'Car Search header uses the shared route context');
+assert.match(css,/v142\.26 · Shared DriveHub header/,'same light DriveHub design is used across tools');
+assert.match(gatewayHtml,/drivehub-chrome\.js\?v=14226/,'the home page also loads the shared header');

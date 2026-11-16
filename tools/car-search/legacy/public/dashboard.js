@@ -31,6 +31,7 @@ const distanceLookups = new Set();
 const distanceFailures = new Set();
 let distanceLookupBusy = false;
 let mapSignature = '', mapRequestId = 0, mapShown = false;
+let locationModalMap = null, locationModalMarker = null, locationModalRequest = 0;
 
 
 function siteFor(input) {
@@ -512,7 +513,7 @@ function exteriorColour(car) {
   // Server supplies broad, vetted exterior colours with provenance.
   // Previously inferred black leather/wheel colours have no source: do not
   // treat those legacy values as a verified exterior until rescanned.
-  if (!car || !['explicit','title','manual'].includes(car.colourSource)) return '';
+  if (!car || !['explicit','title','manual','photo'].includes(car.colourSource)) return '';
   const value = String(car.colour || '').toLowerCase().trim();
   const canonical = value.replace(/gray/g,'grey');
   return COLOUR_CHOICES.some(name => name.toLowerCase()===canonical)
@@ -626,7 +627,8 @@ function combinedCarDetails(group, preferred=null) {
   combined.colourSource=fields.colour.manuallyEdited ? 'manual' :
     fields.colour.conflict || !fields.colour.value ? 'unknown' :
     group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='explicit')
-      ? 'explicit' : 'title';
+      ? 'explicit' : group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='title')
+      ? 'title' : 'photo';
   // This object's fields and sources are for presentation only.
   combined.combinedMeta={
     fields,sources:group.map(row=>({
@@ -831,6 +833,56 @@ function mapLocationForGroup(group) {
 function mapLocationKey(location) {
   return location.trim().toLowerCase();
 }
+async function showCarLocation(ids) {
+  const rows=ids.map(id=>state.listings[id]).filter(Boolean);
+  const location=mapLocationForGroup(rows);
+  if (!location) { toast('This listing has no advertised location to map.',true); return; }
+  const serial=++locationModalRequest;
+  $('locationModalTitle').textContent=location;
+  $('locationMapDescription').textContent='Finding the approximate advertised area…';
+  const dialog=$('locationDialog');
+  if (!dialog.open) show('locationDialog');
+  const wrap=$('locationMiniMap');
+  if (!window.L) {
+    $('locationMapDescription').textContent='The map library could not load. The advertised location is '+location+'.';
+    return;
+  }
+  if (!locationModalMap) {
+    locationModalMap=L.map(wrap,{scrollWheelZoom:false,zoomControl:true,minZoom:4,maxZoom:14});
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      maxZoom:18,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
+    }).addTo(locationModalMap);
+  }
+  if (locationModalMarker) {locationModalMarker.remove();locationModalMarker=null;}
+  locationModalMap.setView([54.4,-3],6);
+  requestAnimationFrame(()=>locationModalMap.invalidateSize());
+  let point=locationPoints.get(mapLocationKey(location));
+  if (point === undefined) {
+    try {
+      const data=await api('/api/map/locations',{
+        method:'POST',body:JSON.stringify({locations:[location]})
+      });
+      point=(data.locations||[]).find(item=>item.location===location)?.point||null;
+      locationPoints.set(mapLocationKey(location),point);
+    } catch(error) {
+      $('locationMapDescription').textContent='Could not locate this advertised area: '+error.message;
+      return;
+    }
+  }
+  if (serial!==locationModalRequest || !dialog.open) return;
+  if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng) ||
+      point.lat<49 || point.lat>61.5 || point.lng< -9 || point.lng>2.6) {
+    $('locationMapDescription').textContent='The advert says '+location+', but its region could not be located confidently.';
+    return;
+  }
+  // A regional zoom (not street zoom) makes the surrounding area clear.
+  locationModalMap.setView([point.lat,point.lng],7);
+  locationModalMarker=L.marker([point.lat,point.lng]).addTo(locationModalMap)
+    .bindPopup(esc(point.label||location)+'<br>Approximate advertised area').openPopup();
+  $('locationMapDescription').textContent='Showing the area around '+(point.label||location)+'. Zoom or pan to explore the region.';
+  requestAnimationFrame(()=>locationModalMap.invalidateSize());
+}
+
 function initListingMap() {
   if (listingMap) return true;
   if (!window.L) {
@@ -1008,7 +1060,7 @@ function renderCard(g, statuses, inHiddenSection=false) {
   return `<article class="listing-card clickable-car" role="button" tabindex="0" aria-label="View details for ${esc(car.title)}. Right-click to open the original advert in a new tab." data-action="car-details" data-ids="${esc(ids.join(','))}" data-url="${esc(linkUrl(car.url))}">
     <div class="listing-image">${imageUrl(car.image) ? `<img src="${esc(imageUrl(car.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="no-image">▱<small>No photo</small></div>`}<div class="image-badges">${inHiddenSection ? '<span class="flag archived">◌ Hidden</span>' : ''}${hasNew && !inHiddenSection ? `<span class="flag new">● New</span>` : ''}${changedItems.length && !inHiddenSection ? `<span class="flag changed">↘ Price move</span>` : ''}</div></div>
     <div class="listing-info"><div class="listing-head"><div class="listing-sites">${[...new Set(g.map(x => x.site))].map(x => displaySite(x, 'mini')).join('')}${g.length > 1 ? `<span class="crosslist">${g.length} ads</span>`:''}${photoBadge}</div><button class="heart ${saved?'on':''}" data-action="save" data-ids="${esc(ids.join(','))}" aria-label="${saved?'Remove from saved cars':'Save car'}" title="${saved?'Remove from shortlist':'Save to shortlist'}">${saved?'♥':'♡'}</button></div>
-    <h3 title="${esc(car.title)}">${esc(car.title)}</h3><div class="car-specs">${car.year?`<span>${car.year}</span>`:''}${car.combinedMeta.fields.mileage.display ? `<span>${esc(car.combinedMeta.fields.mileage.display)}</span>` : ''}${car.location?`<span>${esc(car.location)}${car.combinedMeta.fields.location.conflict?' (multiple locations)':''}</span>`:''}${distance!==null?`<span title="Straight-line miles from High Lane, Stockport">≈${Math.round(distance)} mi away</span>`:''}${exteriorColour(car)?`<span>${esc(exteriorColour(car))}</span>`:''}${car.bhp?`<span>${esc(car.bhp)} bhp</span>`:''}${effectiveTransmission(car)?`<span>${effectiveTransmission(car)==='automatic'?'Automatic':'Manual'}</span>`:''}</div>
+    <h3 title="${esc(car.title)}">${esc(car.title)}</h3><div class="car-specs">${car.year?`<span>${car.year}</span>`:''}${car.combinedMeta.fields.mileage.display ? `<span>${esc(car.combinedMeta.fields.mileage.display)}</span>` : ''}${car.location?`<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg>${esc(car.location)}${car.combinedMeta.fields.location.conflict?' (multiple locations)':''}</button>`:''}${distance!==null?`<span title="Straight-line miles from High Lane, Stockport">≈${Math.round(distance)} mi away</span>`:''}${exteriorColour(car)?`<span title="${car.colourSource==='photo'?'Estimated from advert photo without AI (approximate; check photo)':car.colourSource==='manual'?'Colour entered by you':'Colour from advert text'}">${esc(exteriorColour(car))}${car.colourSource==='photo'?' · photo estimate':''}</span>`:''}${car.bhp?`<span>${esc(car.bhp)} bhp</span>`:''}${effectiveTransmission(car)?`<span>${effectiveTransmission(car)==='automatic'?'Automatic':'Manual'}</span>`:''}</div>
         ${saved && g.some(x => ['queued','running'].includes(x.enrichStatus)) ? '<span class="enrich-indicator">Checking advert details…</span>' : ''}
     <div class="car-price"><strong>${fmtPrice(cheapest.price)}</strong>${changed && diff!==0 ? `<span class="price-move ${diff<0?'drop':'rise'}">${diff<0?'↓':'↑'} ${fmtPrice(Math.abs(diff))} ${diff<0?'drop':'rise'}</span>` : ''}</div>
     ${note ? `<div class="note-preview">✎ ${esc(note.length > 115 ? note.slice(0,115)+'…' : note)}</div>` : ''}
@@ -1596,6 +1648,8 @@ async function syncStatus() {
 }
 
 // Event delegation keeps all card controls working after a refresh.
+$('closeLocationDialog').addEventListener('click',()=>hide('locationDialog'));
+$('locationDialog').addEventListener('close',()=>{locationModalRequest++;});
 document.addEventListener('click', async event => {
   const btn = event.target.closest('[data-action]');
   if (!btn) return;
@@ -1603,7 +1657,8 @@ document.addEventListener('click', async event => {
   event.preventDefault();
   const action = btn.dataset.action;
   const ids = (btn.dataset.ids || '').split(',').filter(Boolean);
-  if (action === 'car-details') openCarDetails(ids);
+  if (action === 'location-map') await showCarLocation(ids);
+  else if (action === 'car-details') openCarDetails(ids);
   else if (action === 'car-source') openCarDetails(ids, btn.dataset.id);
   else if (action === 'car-variant') { activeCarId = btn.dataset.id; renderCarDetails(); }
   else if (action === 'view') switchView(btn.dataset.view);

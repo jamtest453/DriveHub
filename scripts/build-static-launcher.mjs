@@ -22,6 +22,7 @@ function insertBeforeFinalBody(html,content){
 
 function inlineValuation(){
   let html=fs.readFileSync(path.join(valuationDir,'index.html'),'utf8');
+  html=html.replace(/<body([^>]*)>/,`<body$1 data-drivehub-tool="valuation">`);
   const css=fs.readFileSync(path.join(valuationDir,'styles.css'),'utf8');
   const js=fs.readFileSync(path.join(valuationDir,'app.js'),'utf8').replaceAll('</script>','<\\/script>');
   html=html.replace(/<link rel="stylesheet" href="\.\/styles\.css(\?v=[\w.]+)?">/,`<style>\n${css}\n</style>`);
@@ -36,6 +37,7 @@ function inlineValuation(){
 
 function inlineRoadFinder(){
   let html=fs.readFileSync(path.join(roadDir,'index.html'),'utf8');
+  html=html.replace(/<body([^>]*)>/,`<body$1 data-drivehub-tool="roads">`);
   const css=fs.readFileSync(path.join(roadDir,'style.css'),'utf8');
   html=html.replace(/<link rel="stylesheet" href="style\.css(\?v=[\w.]+)?">/,`<style>\n${css}\n</style>`);
   html=html.replace(/<link rel="stylesheet" href="\.\.\/\.\.\/\.\.\/shared\/public\/drivehub-chrome\.css(\?v=[\w.]+)?">/,`<style>\n${sharedCss}\n</style>`);
@@ -52,6 +54,7 @@ function inlineRoadFinder(){
 
 function inlineGarage(){
   let html=fs.readFileSync(path.join(garageDir,'index.html'),'utf8');
+  html=html.replace(/<body([^>]*)>/,`<body$1 data-drivehub-tool="garage">`);
   const styles=fs.readFileSync(path.join(garageDir,'css','styles.css'),'utf8');
   const design=fs.readFileSync(path.join(garageDir,'css','design-system.css'),'utf8');
   const icon=fs.readFileSync(path.join(garageDir,'icons','drivehub-192.png')).toString('base64');
@@ -79,6 +82,8 @@ function buildLauncher(payload){
   const icon=fs.readFileSync(path.join(gatewayDir,'icons','drivehub-192.png')).toString('base64');
   html=html.replace(/<link rel="icon"[^>]*>/,'').replace(/<link rel="apple-touch-icon"[^>]*>/,'');
   html=html.replace(/<link rel="stylesheet" href="styles\.css(\?v=[\w.]+)?">/,`<style>\n${css}\nhtml,body{min-height:100%}#tool-frame{position:fixed;inset:0;width:100%;height:100dvh;border:0;background:#f7f8f5;z-index:9999}#tool-frame[hidden]{display:none}[hidden]{display:none!important}\n</style>`);
+  html=html.replace(/<link rel="stylesheet" href="\/shared\/public\/drivehub-chrome\.css(\?v=[\w.]+)?">/,`<style>\n${sharedCss}\n</style>`);
+  html=html.replace(/<script src="\/shared\/public\/drivehub-chrome\.js(\?v=[\w.]+)?"><\/script>/,'');
   html=html.replace(/src="icons\/drivehub-192\.png"/g,`src="data:image/png;base64,${icon}"`);
   html=html.replace(/<script src="\/shared\/public\/drivehub-runtime\.js(\?v=[\w.]+)?"><\/script>/,'');
   html=html.replace('<body>','<body><div id="gateway-shell">').replace(/\s*<script src="app\.js(\?v=[\w.]+)?"><\/script>\s*<\/body>/,`\n</div><iframe id="tool-frame" title="DriveHub tool" hidden></iframe><script>\nconst DRIVEHUB_TOOLS=${JSON.stringify(payload)};\nconst gateway=document.getElementById('gateway-shell');\nconst frame=document.getElementById('tool-frame');\nfunction decodeTool(name){const raw=atob(DRIVEHUB_TOOLS[name]||'');const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));return new TextDecoder().decode(bytes)}\nconst DRIVEHUB_HOSTED_TOOL_URLS={garage:'/garage/',valuation:'/valuation/',roads:'/roads/'};\nconst DRIVEHUB_IS_HOSTED=/^https?:$/.test(location.protocol);\nlet embeddedToolNavSeq=0;\nfunction showHome(updateHash=true){frame.hidden=true;frame.removeAttribute('srcdoc');gateway.hidden=false;if(updateHash&&location.hash)history.pushState(null,'',location.href.split('#')[0]);window.scrollTo(0,0)}\nfunction openTool(name,updateHash=true){if(name==='search'){location.assign(DRIVEHUB_IS_HOSTED?'/search/':'https://drivehub-production-7aa4f6f5.up.railway.app/search/');return}if(!DRIVEHUB_TOOLS[name])return;if(DRIVEHUB_IS_HOSTED){location.assign(DRIVEHUB_HOSTED_TOOL_URLS[name]||'/');return}const navSeq=++embeddedToolNavSeq;gateway.hidden=true;frame.hidden=false;const toolHtml=decodeTool(name);setTimeout(()=>{if(navSeq!==embeddedToolNavSeq)return;frame.onload=()=>{try{frame.contentWindow?.postMessage({type:'drivehub-embedded-visible',tool:name},'*')}catch{}};frame.srcdoc=toolHtml},0);if(updateHash&&location.hash!==('#'+name))history.pushState(null,'','#'+name);window.scrollTo(0,0)}\ndocument.addEventListener('click',e=>{const card=e.target.closest('[data-tool]');if(card){e.preventDefault();openTool(card.dataset.tool)}});\nfunction pushKey(value){const padding='='.repeat((4-value.length%4)%4),raw=atob((value+padding).replace(/-/g,'+').replace(/_/g,'/')),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out}
@@ -103,4 +108,4 @@ let releaseHtml=fs.readFileSync(path.join(gatewayDir,'release-notes.html'),'utf8
 releaseHtml=releaseHtml.replace(/<link rel="stylesheet" href="styles\.css(\?v=[\w.]+)?">/,`<style>\n${fs.readFileSync(path.join(gatewayDir,'styles.css'),'utf8')}\n</style>`);
 releaseHtml=releaseHtml.replace(/href="\/"/g,'href="index.html"');
 fs.writeFileSync(path.join(ROOT,'release-notes.html'),releaseHtml);
-console.log('Rebuilt standalone DriveHub gateway plus MyGarage, Road Finder, Valuation and shared chrome (DriveHub v142.25)');
+console.log('Rebuilt standalone DriveHub gateway plus MyGarage, Road Finder, Valuation and shared chrome (DriveHub v142.26)');

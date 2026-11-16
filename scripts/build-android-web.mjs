@@ -9,7 +9,7 @@ const releaseMatch=serverSource.match(/DRIVEHUB_VERSION='([^']+)'/);
 if(!releaseMatch)throw new Error('Could not determine DriveHub release from server.js');
 const DRIVEHUB_VERSION=releaseMatch[1];
 const VERSION=(DRIVEHUB_VERSION.split('.').length===2?`${DRIVEHUB_VERSION}.0`:DRIVEHUB_VERSION);
-const DEFAULT_ORIGIN='https://drive-hub-production-6748.up.railway.app';
+const DEFAULT_ORIGIN='https://drivehub-production-7aa4f6f5.up.railway.app';
 const API_ORIGIN=String(process.env.DRIVEHUB_APP_ORIGIN||DEFAULT_ORIGIN).replace(/\/+$/,'');
 
 function copyDir(from,to){
