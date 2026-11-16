@@ -1,93 +1,69 @@
 import assert from 'node:assert/strict';
-import http from 'node:http';
 import {spawn} from 'node:child_process';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {setTimeout as sleep} from 'node:timers/promises';
-import {rewriteCarSearchScript} from '../server/proxy.js';
+import {advertIdentity,groupMatchesKeywords,validateFields,providerLinks,queryImport,applyEdits,updateListing,carGroups} from '../server/core.js';
+import {parseDetail,parseResults} from '../server/providers.js';
 
-const upstreamPort=20500+(process.pid%2000),drivehubPort=22500+(process.pid%2000);
-let hits=[];
-const upstream=http.createServer(async (req,res)=>{
-  const path=new URL(req.url,'http://localhost').pathname;
-  const body=[];for await(const chunk of req)body.push(chunk);
-  hits.push({path,method:req.method,cookie:req.headers.cookie||'',origin:req.headers.origin,host:req.headers.host,body:Buffer.concat(body).toString('utf8')});
-  if(path==='/dashboard.js'){
-    res.setHeader('content-type','text/javascript');
-    res.end("const x=await fetch(url,{credentials:'same-origin'});fetch('/api/facebook/connection/preview');window.location.href = '/api/export';");return;
-  }
-  if(path==='/api/login'){
-    res.setHeader('set-cookie',['carhub_session=testing.123; HttpOnly; Path=/; SameSite=Strict',
-      'other=ignore; Path=/; HttpOnly']);
-    res.setHeader('content-type','application/json');res.end('{"ok":true}');return;
-  }
-  if(path==='/api/auth'){
-    res.setHeader('content-type','application/json');res.end('{"authenticated":false,"passwordRequired":true}');return;
-  }
-  if(path==='/'){
-    res.setHeader('content-type','text/html; charset=utf-8');res.end('<!doctype html><html><body><script src="dashboard.js"></script>Car search upstream</body></html>');return;
-  }
-  res.setHeader('content-type','application/json');res.end(JSON.stringify({url:req.url,method:req.method}));
-});
-await new Promise(resolve=>upstream.listen(upstreamPort,'127.0.0.1',resolve));
-const root=new URL('../../../',import.meta.url);
-const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,PORT:String(drivehubPort),CAR_SEARCH_HUB_URL:`http://127.0.0.1:${upstreamPort}`},stdio:['ignore','pipe','pipe']});
-let output='';child.stderr.on('data',d=>output+=String(d));child.stdout.on('data',d=>output+=String(d));
-const base=`http://127.0.0.1:${drivehubPort}`;
-async function get(path,options={}){return fetch(base+path,{redirect:'manual',...options})}
+assert.equal(advertIdentity('https://www.autotrader.co.uk/car-details/202611027550673?utm_source=share').id,'autotrader:202611027550673');
+assert.equal(advertIdentity('https://www.ebay.co.uk/itm/porsche/123456789012').id,'ebay:123456789012');
+assert.equal(advertIdentity('https://www.pistonheads.com/buy/listing/12345678').id,'pistonheads:12345678');
+assert.equal(advertIdentity('https://www.facebook.com/marketplace/item/123456789012345/').id,'facebook:123456789012345');
+for(const invalid of ['https://www.autotrader.co.uk/car-search?make=BMW','https://evil.autotrader.co.uk.other.com/car-details/202611027550673','http://www.autotrader.co.uk/car-details/202611027550673'])assert.throws(()=>advertIdentity(invalid));
+const g=[{title:'Porsche C4S',description:'Six speed manual'},{title:'Porsche Carrera 4S',description:'Automatic'}];
+assert.ok(groupMatchesKeywords([g[0]],{requiredKeywords:'C4S OR Carrera 4S, manual'}));
+assert.ok(!groupMatchesKeywords([g[1]],{requiredKeywords:'C4S OR Carrera 4S, manual'}));
+assert.ok(groupMatchesKeywords([g[1]],{requiredKeywords:'C4S, Carrera 4S',requiredKeywordLogic:'any'}));
+assert.ok(!groupMatchesKeywords([g[1]],{requiredKeywords:'C4S, Carrera 4S',requiredKeywordLogic:'all'}));
+assert.ok(!groupMatchesKeywords(g,{excludeKeywords:'convertible OR automatic'}));
+assert.equal(validateFields({year:2003,colour:'blue',title:' Porsche C4S '}).title,'Porsche C4S');
+assert.throws(()=>validateFields({mileage:-100}));
+const edits={id:'x',title:'Original title',price:25000,saved:true,colour:'blue',priceHistory:[]};
+applyEdits(edits,{title:'Owner description',price:24000,colour:'red'});
+const s={listings:{x:edits}};
+updateListing(s,{id:'x',title:'Website description',price:26000,colour:'green',location:'Stockport'});
+assert.equal(edits.title,'Owner description');assert.equal(edits.price,24000);assert.equal(edits.colour,'red');assert.equal(edits.location,'Stockport');
+assert.equal(providerLinks({make:'Porsche',model:'911'},['autotrader','ebay','pistonheads','facebook']).length,4);
+const imported=queryImport('https://www.autotrader.co.uk/car-search?aggregatedTrim=996%20Carrera%204S&make=Porsche&model=911&maximum-mileage=100000&price-to=30000&transmission=Manual');
+assert.equal(imported.filters.requiredKeywords,'996, Carrera 4S');assert.equal(imported.filters.transmission,'manual');
+const cardHTML=`<a href="/car-details/202611027550673"><h3>2006 Porsche 911 Carrera 4S</h3><span>£29,995</span></a>`;
+const parsed=parseResults(cardHTML,'https://www.autotrader.co.uk/car-search?make=Porsche',{make:'Porsche',model:'911'});
+assert.equal(parsed.length,1);assert.equal(parsed[0].price,29995);
+const detail=parseDetail('<title>2006 Porsche 911 Carrera 4S</title><meta property="og:image" content="https://img.example/p.jpg"><meta property="product:price:amount" content="29995">','https://www.autotrader.co.uk/car-details/202611027550673');
+assert.equal(detail?.price,29995);
+const root=fileURLToPath(new URL('../../../',import.meta.url));const tmp=await mkdtemp(path.join(os.tmpdir(),'drivehub-car-search-'));
+const PORT=24500+(process.pid%1000);
+const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,PORT:String(PORT),CAR_SEARCH_DATA_FILE:path.join(tmp,'cars.json'),CAR_SEARCH_PASSWORD:'test-secret'},stdio:['ignore','pipe','pipe']});
+let logs='';child.stderr.on('data',d=>logs+=String(d));child.stdout.on('data',d=>logs+=String(d));
+const base='http://127.0.0.1:'+PORT;
+async function get(url,opts={}){return fetch(base+url,{redirect:'manual',...opts})}
+let cookie='';
+async function api(url,body,method='POST'){const opts={method,headers:{'content-type':'application/json',origin:base,cookie}};if(body!==undefined)opts.body=JSON.stringify(body);const res=await get('/car-search-app/api'+url,opts);return {res,data:await res.json()}}
 try{
-  let started=false;for(let i=0;i<80;i++){
-    try{const r=await get('/');if(r.ok){started=true;break}}catch{}
-    if(child.exitCode!==null)break;
-    await sleep(50);
-  }
-  assert.ok(started,output||'DriveHub did not start');
-  let r=await get('/');assert.equal(r.status,200);
-  const home=await r.text();assert.match(home,/Car Search/);assert.match(home,/href="\/search\/"/);
-  r=await get('/search');assert.equal(r.status,308);assert.equal(r.headers.get('location'),'/search/');
-  r=await get('/search/');assert.equal(r.status,200);const html=await r.text();
-  assert.match(html,/<iframe[^>]+src="\/car-search-app\/"/);
-  assert.match(r.headers.get('x-frame-options')||'',/DENY/);
-  r=await get('/search/app.js?v=14222');assert.equal(r.status,200);
-  r=await get('/search/styles.css?v=14222');assert.equal(r.status,200);
-
-  r=await get('/car-search-app/');assert.equal(r.status,200);
-  assert.match(await r.text(),/Car search upstream/);
-  assert.equal(r.headers.get('x-frame-options'),'SAMEORIGIN');
-  assert.match(r.headers.get('content-security-policy')||'',/frame-ancestors 'self'/);
-  assert.match(r.headers.get('content-security-policy')||'',/cdn\.jsdelivr\.net/);
-  assert.match(r.headers.get('cache-control')||'',/no-store/);
-
-  r=await get('/car-search-app/dashboard.js?v=abc');assert.equal(r.status,200);
-  const script=await r.text();
-  assert.match(script,/fetch\('\/car-search-app' \+ url/);
-  assert.match(script,/fetch\('\/car-search-app\/api\/facebook\/connection\/preview'/);
-  assert.match(script,/location.href = '\/car-search-app\/api\/export'/);
-  assert.match(r.headers.get('cache-control')||'',/no-store/);
-
-  r=await get('/car-search-app/api/auth',{headers:{cookie:'drivehub_private=must-not-leak; carhub_session=sent-to-carhub'}});
-  assert.equal(r.status,200);assert.equal((await r.json()).passwordRequired,true);
-  assert.equal(hits.at(-1).cookie,'carhub_session=sent-to-carhub');
-
-  r=await get('/car-search-app/api/login',{method:'POST',headers:{'content-type':'application/json',
-    origin:base,cookie:'anotherapp=secret; carhub_session=good'},body:'{"password":"some_password"}'});
-  assert.equal(r.status,200,await r.text());
-  assert.equal(hits.at(-1).body,'{"password":"some_password"}');
-  assert.equal(hits.at(-1).origin,`http://127.0.0.1:${upstreamPort}`);
-  assert.equal(hits.at(-1).cookie,'carhub_session=good');
-  const cookies=r.headers.getSetCookie();
-  assert.equal(cookies.length,1);
-  for(const cookie of cookies){
-    assert.match(cookie,/Path=\/car-search-app\//);
-    assert.doesNotMatch(cookie,/Path=\/(?:;|$)/);
-  }
-  const bad=await get('/car-search-app/api/login',{method:'POST',headers:{origin:'https://malicious.example', 'content-type':'application/json'},body:'{}'});
-  assert.equal(bad.status,403);
-
-  r=await get('/api/integrations/status');assert.equal(r.status,200);const status=await r.json();
-  assert.equal(status.carSearch.configured,true);assert.equal(status.carSearch.mode,'same-origin-proxy');
-  r=await get('/api/state');assert.equal(r.status,404,'Car Search must not intercept DriveHub API paths');
-  assert.ok(rewriteCarSearchScript("fetch(url,{credentials:'same-origin'").includes("fetch('/car-search-app' + url"));
-  console.log('Car Search tool, same-origin proxy, cookies, CSP, live status and API isolation passed.');
-} finally {
-  child.kill('SIGTERM');
-  await new Promise(resolve=>upstream.close(resolve));
-}
+  let up=false;for(let i=0;i<100;i++){try{const r=await get('/');if(r.ok){up=true;break}}catch{}if(child.exitCode!==null)break;await sleep(100)}assert.ok(up,logs);
+  let r=await get('/');assert.equal(r.status,200);assert.match(await r.text(),/Car Search/);
+  r=await get('/search/');assert.equal(r.status,200);assert.match(await r.text(),/car-search-app/);
+  r=await get('/car-search-app/');assert.equal(r.status,200);assert.match(await r.text(),/Your next car/);
+  r=await get('/car-search-app/dashboard.js');assert.equal(r.status,200);assert.match(await r.text(),/CAR_SEARCH|Car Search/);
+  r=await get('/car-search-app/styles.css');assert.equal(r.status,200);
+  r=await get('/car-search-app/api/state');assert.equal(r.status,401);
+  r=await get('/car-search-app/api/auth');assert.equal((await r.json()).passwordRequired,true);
+  let out=await api('/login',{password:'wrong'});assert.equal(out.res.status,401);
+  out=await api('/login',{password:'test-secret'});assert.equal(out.res.status,200);cookie=out.res.headers.get('set-cookie').split(';')[0];assert.match(out.res.headers.get('set-cookie'),/Path=\/car-search-app\//);
+  out=await api('/searches',{name:'Porsche 996',filters:{make:'Porsche',model:'911',requiredKeywords:'C4S OR Carrera 4S, manual'},sources:['autotrader','ebay']});assert.equal(out.res.status,200,JSON.stringify(out.data));assert.equal(out.data.state.searches.length,1);
+  let search=out.data.state.searches[0];assert.equal(search.links.length,2);
+  out=await api('/searches/parse-url',{url:'https://www.autotrader.co.uk/car-search?make=Porsche&model=911'});assert.equal(out.res.status,200);assert.equal(out.data.filters.make,'Porsche');
+  out=await api('/listings/manual',{url:'https://www.autotrader.co.uk/car-details/202611027550673',fields:{title:'2006 Porsche 911 Carrera 4S',price:26995,colour:'blue',notes:'Private note'}});assert.equal(out.res.status,200,JSON.stringify(out.data));let id=out.data.carId;assert.equal(out.data.state.listings[id].saved,true);
+  out=await api('/listings/manual',{url:'https://www.autotrader.co.uk/car-details/202611027550673?abc=1'});assert.equal(out.res.status,200);assert.equal(out.data.alreadyPresent,true);assert.equal(out.data.carId,id);
+  out=await api('/listings/manual/'+encodeURIComponent(id),{fields:{title:'My Porsche',price:25500}},'PATCH');assert.equal(out.res.status,200);assert.equal(out.data.state.listings[id].title,'My Porsche');
+  out=await api('/listings/notes',{ids:[id],notes:'My revised note'});assert.equal(out.res.status,200);assert.equal(out.data.state.listings[id].notes,'My revised note');
+  r=await get('/car-search-app/api/export',{headers:{cookie}});assert.equal(r.status,200);const backup=await r.json();assert.equal(backup.version,1);assert.ok(backup.listings[id]);
+  const onDisk=JSON.parse(await readFile(path.join(tmp,'cars.json'),'utf8'));assert.ok(onDisk.listings[id]);
+  out=await api('/listings/manual',{url:'https://other.example.com/bad'});assert.equal(out.res.status,400);
+  const status=await get('/api/integrations/status');const data=await status.json();assert.equal(data.carSearch.mode,'native-drivehub');
+  r=await get('/api/state');assert.equal(r.status,404,'Car Search must not use DriveHub API namespace');
+  console.log('Native Car Search tests passed: URL safety, keyword logic, scrape parser, UI, auth, search, saved cars, editing, notes, backups, persistence, API isolation.');
+}finally{child.kill('SIGTERM');await rm(tmp,{force:true,recursive:true})}
