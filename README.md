@@ -1,4 +1,10 @@
-# DriveHub v142.24
+# DriveHub v142.25
+
+## v142.25 Car Search fullscreen + unified DriveHub design
+
+- Car Search now occupies the full browser workspace: its tool container has explicit viewport-sized grid rows, and its internal iframe fills the remaining space on desktop and mobile instead of using the default small embedded-frame dimensions.
+- The original Car Search interface uses DriveHub branding, green/teal colours, Figtree and Caprasimo fonts, integrated buttons/cards/forms and logo. All search data and browser scraping logic are unchanged.
+- The standalone launcher now links to this live DriveHub service rather than the deleted Car Finder domain.
 
 ## v142.24 Original Car Search Hub restored within DriveHub
 

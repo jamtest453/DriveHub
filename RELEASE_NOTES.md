@@ -1,3 +1,11 @@
+# v142.25 — Car Search DriveHub branding and full-screen layout
+
+- Fixes Car Search opening inside a browser-default 300×150 iframe. The DriveHub tool shell now fills the entire available desktop and mobile viewport, with a responsive header and an edge-to-edge searchable workspace.
+- Restyles the **original Python Car Finder** interface using DriveHub Figtree and Caprasimo typography, green/teal accents, soft backgrounds, consistent cards, buttons, fields, sidebar navigation and login screen. The original dashboard JavaScript and underlying scanning/storage remain unchanged.
+- Brings DriveHub identity and navigation into Car Search, including branding and a clear return-to-tools link, while retaining a separate-tab option.
+- Corrects the standalone launcher Car Search fallback to the active DriveHub URL rather than the deleted Car Finder service.
+- Adds regression assertions for full-height iframe layout, theme loading and branding; the original Car Finder tests remain in the combined release gate.
+
 # v142.24 — Restore original full Car Search Hub within DriveHub
 
 - Restored every source file from the backed-up Car Finder project, not a simplified reimplementation. All original features and original tests are included under `tools/car-search/legacy/`.
