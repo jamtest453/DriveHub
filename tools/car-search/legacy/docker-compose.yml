@@ -1,0 +1,14 @@
+services:
+  car-search-hub:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:?Set APP_PASSWORD in .env before starting}
+      ENVIRONMENT: production
+      DATA_DIR: /data
+    volumes:
+      - car_search_data:/data
+volumes:
+  car_search_data:

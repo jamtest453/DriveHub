@@ -1,0 +1,12 @@
+# Car Search in DriveHub
+
+DriveHub v142.24 embeds the **original Car Search Hub v4.12 application**, not an approximate rewrite. The backed-up source is under `legacy/`, unmodified except for a small `package.json` declaring CommonJS in order to run its original JavaScript tests from DriveHub's ESM project. All the original Python tests and both original browser keyword tests are included.
+
+- **One service:** Railway builds the root Dockerfile (Node 22, Python, Chromium and Playwright dependencies). The container starts `scripts/start-drivehub.sh`, which runs Python on `127.0.0.1:3213` and the DriveHub Node server on `$PORT` (default 8080).
+- **One domain:** DriveHub serves `/search/` and the existing in-app frame at `/car-search-app/`. The Node proxy forwards only to the private Python server, retaining API namespaces, origin checks and separate Car Search login cookies.
+- **One data volume:** The existing Railway `/data` volume is shared by the tools. Car Search's original state file is `/data/car-search-hub.json`; the Facebook browser session is `/data/facebook-session.json`. Neither file is intentionally reset or migrated.
+- **Password:** `CAR_SEARCH_PASSWORD` supplies the original FastAPI `APP_PASSWORD` setting. It is mandatory in production, and Car Search logins are separate from other DriveHub tools. To preserve sessions across redeployments set `CAR_SEARCH_SESSION_SECRET`. Never put these secrets in Git.
+- **Provider credentials:** Original eBay Browse API uses `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`. Original Facebook connection manager allows interactive login or uses `FACEBOOK_EMAIL` / `FACEBOOK_PASSWORD` when supplied. Website access may still be restricted by the provider.
+- **Tests:** `npm run check` for DriveHub; `cd tools/car-search/legacy && python -m pytest -q` for 206 original Python tests; `python tools/car-search/tests/live-sidecar-local.py` for actual Python + Node local integration. `.github/workflows/verify.yml` runs all three on pull requests and `main`.
+
+The `legacy/Dockerfile` is retained as source history, but the **root** Dockerfile is the one used to deploy the combined single-service app.

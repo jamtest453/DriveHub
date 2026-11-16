@@ -1,4 +1,14 @@
-# DriveHub v142.23
+# DriveHub v142.24
+
+## v142.24 Original Car Search Hub restored within DriveHub
+
+- Restored the complete backed-up **Car Search Hub v4.12** source under `tools/car-search/legacy/`, including its original FastAPI backend, Playwright/Chromium scanner, four site integrations, Facebook session management, eBay API, vehicle enrichment, colour and mileage safeguards, geocoding/distance results, photo hashing, deduplication, maps, AND/OR keywords, saved-car manual editing and sharing, and all 206 original Python tests.
+- DriveHub stays **one GitHub repo, one Railway service and one public domain**. Its Node server routes `/car-search-app/` to a local Python process bound only to `127.0.0.1:3213`. The original saved data file stays on the existing DriveHub volume at `/data/car-search-hub.json`.
+- `Dockerfile` includes Python, Node and headless Chromium. `scripts/start-drivehub.sh` starts both processes and maps `CAR_SEARCH_PASSWORD` to the original Python login. **A strong `CAR_SEARCH_PASSWORD` must be set in Railway for production.**
+- The Car Search frontend, API, auth session and safe provider URL extraction retain their original behaviour. The user-facing `/search/` gateway continues to use DriveHub styling.
+- The original source remains intact in a separate folder for auditability. Both DriveHub tests and the full original Car Finder tests are run during release verification.
+- Live provider access still depends on site restrictions and configured credentials; passing offline tests does not guarantee Facebook/Auto Trader scraping access.
+
 
 ## v142.23 Native Car Search (single DriveHub service)
 

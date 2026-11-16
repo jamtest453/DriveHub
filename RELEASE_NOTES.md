@@ -1,3 +1,11 @@
+# v142.24 — Restore original full Car Search Hub within DriveHub
+
+- Restored every source file from the backed-up Car Finder project, not a simplified reimplementation. All original features and original tests are included under `tools/car-search/legacy/`.
+- Native Node Car Search replacement retired; DriveHub now hosts the full Python Playwright scanner and original dashboard as a **local loopback sidecar** inside the same container. No second Railway project, repo, service or domain is required.
+- Keeps existing `/data/car-search-hub.json` storage and cookie isolation; login password comes from `CAR_SEARCH_PASSWORD`.
+- Deployment uses the root `Dockerfile` (Node, Python, Chromium), with both apps started by `scripts/start-drivehub.sh`.
+- Scanning external sites still depends on credentials and website access policies; source and test parity do not certify live site bookability.
+
 # v142.23 — Native Car Search inside DriveHub
 
 ## v142.23 Native Car Search (single DriveHub service)

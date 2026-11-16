@@ -23,6 +23,26 @@
     <p class="kicker">RELEASE HISTORY</p>
     <h1>What's new</h1>
     <article class="release-card">
+      <p class="kicker">v142.24 · 16 November 2026</p>
+      <h2>Full original Car Search Hub restored</h2>
+      <p>Restores the complete saved original Car Finder application, including its Playwright browser-based scanner, Facebook session manager, eBay integration, photo comparison, geocoded map, editable saved cars and original interface.</p>
+      <p>Everything now runs inside the single DriveHub Railway service. The original backend and all its tests are included in the DriveHub repository. The service uses the existing DriveHub volume; a Car Search password protects private saved-car data.</p>
+      <p>Website scan success still depends on the sites allowing automated access and any required account credentials.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.24 · 16 November 2026</p>
+      <h2>Car Search now runs inside DriveHub</h2>
+      <p>Car Search now has its own native backend and user interface in the DriveHub repository. No separate Car Finder service or domain is required.</p>
+      <ul>
+        <li>Persistent searches and saved cars now live in DriveHub's existing /data volume, with import/export backups.</li>
+        <li>Add cars from supported advert URLs; edit vehicle details, notes and asking prices; save, share, hide and restore cars.</li>
+        <li>Keyword AND/OR combinations, duplicate grouping and merging, display filters and generated search links.</li>
+        <li>Source refresh attempts read public pages and clearly report site restrictions without inventing adverts.</li>
+      </ul>
+      <p><strong>Scanning limitation:</strong> This is a rebuilt Node version. The former Playwright/Facebook authentication, full maps and image hashing are not yet reproduced. Some sites block server-side HTML access; use original links or manual listing entry when that happens.</p>
+      <p><strong>Privacy:</strong> Set <code>CAR_SEARCH_PASSWORD</code> in Railway to protect stored searches and private notes.</p>
+    </article>
+    <article class="release-card">
       <p class="kicker">v142.22 · 16 November 2026</p>
       <h2>Car Search joins DriveHub</h2>
       <p>DriveHub now brings together four tools. Car Search is available beside MyGarage, Valuation Tool and Road Finder, with its own tool page at <code>/search/</code>.</p>

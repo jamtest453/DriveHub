@@ -1,0 +1,11 @@
+.git
+.env
+node_modules
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/.DS_Store
+.data
+**/.data
+android-shell/android
