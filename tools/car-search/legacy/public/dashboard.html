@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+  <meta name="color-scheme" content="light">
+  <title>Car Search Hub</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous" defer></script>
+  <script src="dashboard.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-icon">C<span>H</span></span><div><strong>Car Search Hub</strong><small>YOUR CAR HUNT, TOGETHER</small></div></div>
+      <div class="nav-head">WORKSPACE</div>
+      <nav id="searchNav" aria-label="Saved searches"></nav>
+      <button class="add-search" id="newSearchSide">＋ <span>Add a car search</span></button>
+      <div class="sidebar-foot"><span class="tiny-light"></span> Data saved on your server <button class="text-button" id="settingsSide">Settings & backup</button></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div class="breadcrumb">MY GARAGE <span>/</span> <span id="breadcrumbView">Overview</span></div><div class="top-actions"><button class="button quiet" id="facebookLoginTop" title="Connect Facebook to Railway">f <span class="on-wide">Connect Facebook</span></button><button class="button quiet" id="settingsTop" title="Settings and backup">⚙ <span class="on-wide">Settings</span></button><button class="button dark" id="newSearchTop">＋ New search</button></div></header>
+      <div class="content">
+        <div id="notice" class="notice hidden" role="status"></div>
+        <div class="heading"><div><div class="eyebrow" id="eyebrow">ALL YOUR SEARCHES</div><h1 id="viewTitle">Find your next car.</h1><p class="subheading" id="viewSubtitle">One place for every listing you're following.</p></div><div class="heading-actions" id="headingActions"></div></div>
+        <section class="metrics" id="metrics"></section>
+        <section id="searchSources" class="sources hidden"></section>
+        <div id="scanProgress" class="scan-progress hidden"><div><span class="spinner"></span><strong id="scanLabel">Checking listings…</strong><span id="scanDetail"></span></div><button class="button quiet small" id="stopScan">Stop after current source</button></div>
+        <section class="results-section" id="resultsSection"><div class="section-toolbar"><div><h2 id="resultsTitle">Listings</h2><p id="resultsSubtitle"></p></div><div class="results-layout-toggle" role="group" aria-label="Results layout"><button id="listModeButton" class="layout-button active" type="button" aria-pressed="true"><span aria-hidden="true">☷</span> List</button><button id="mapModeButton" class="layout-button" type="button" aria-pressed="false"><span aria-hidden="true">⌖</span> Map</button></div><div class="filters"><label class="filter-search"><span aria-hidden="true">⌕</span><input id="keywordFilter" placeholder="Filter listings…" aria-label="Filter listings"></label><select id="sourceFilter" aria-label="Filter source"><option value="all">All sites</option><option value="autotrader">Auto Trader</option><option value="ebay">eBay</option><option value="pistonheads">PistonHeads</option><option value="facebook">Facebook</option></select><select id="sortFilter" aria-label="Sort listings"><option value="seen">Recently found</option><option value="preferred">Best preferred match</option><option value="priceLow">Price: low to high</option><option value="priceHigh">Price: high to low</option><option value="year">Newest year</option><option value="distanceNear">Distance: nearest to High Lane</option><option value="distanceFar">Distance: furthest from High Lane</option></select><label class="toggle-filter"><input type="checkbox" id="changesOnly"><span>Changes only</span></label></div></div>
+          <details id="resultFilterPanel" class="result-filter-panel">
+            <summary>Filter displayed results <span>— separate from the saved search criteria</span></summary>
+            <div class="result-filter-grid">
+              <label>Min price (£)<input id="resultPriceMin" type="number" min="0" inputmode="numeric" placeholder="Any"></label>
+              <label>Max price (£)<input id="resultPriceMax" type="number" min="0" inputmode="numeric" placeholder="Any"></label>
+              <label>Year from<input id="resultYearMin" type="number" min="1950" max="2035" inputmode="numeric" placeholder="Any"></label>
+              <label>Year to<input id="resultYearMax" type="number" min="1950" max="2035" inputmode="numeric" placeholder="Any"></label>
+              <label>Min mileage<input id="resultMileageMin" type="number" min="0" inputmode="numeric" placeholder="Any"></label>
+              <label>Max mileage<input id="resultMileageMax" type="number" min="0" inputmode="numeric" placeholder="Any"></label>
+              <label>Engine min (L)<input id="resultEngineMin" type="number" min="0" max="12" step="0.1" inputmode="decimal" placeholder="Any"></label>
+              <label>Engine max (L)<input id="resultEngineMax" type="number" min="0" max="12" step="0.1" inputmode="decimal" placeholder="Any"></label>
+              <label>Min BHP<input id="resultBhpMin" type="number" min="0" inputmode="numeric" placeholder="Any"></label>
+              <label>Max BHP<input id="resultBhpMax" type="number" min="0" inputmode="numeric" placeholder="Any"></label>
+              <label>Distance from High Lane
+                <select id="resultDistanceMax">
+                  <option value="">Any distance</option>
+                  <option value="10">Within 10 miles</option>
+                  <option value="20">Within 20 miles</option>
+                  <option value="30">Within 30 miles</option>
+                  <option value="50">Within 50 miles</option>
+                  <option value="75">Within 75 miles</option>
+                  <option value="100">Within 100 miles</option>
+                  <option value="150">Within 150 miles</option>
+                  <option value="250">Within 250 miles</option>
+                </select>
+              </label>
+              <label>Exterior colour<select id="resultColour"><option value="any">Any</option><option value="unknown">Unknown / not confirmed</option><option value="black">Black</option><option value="white">White</option><option value="silver">Silver</option><option value="grey">Grey</option><option value="blue">Blue</option><option value="red">Red</option><option value="green">Green</option><option value="yellow">Yellow</option><option value="orange">Orange</option><option value="purple">Purple</option><option value="brown">Brown</option><option value="gold">Gold</option><option value="beige">Beige</option></select></label>
+              <label>Transmission<select id="resultTransmission"><option value="any">Any</option><option value="automatic">Automatic</option><option value="manual">Manual</option></select></label>
+              <button class="button quiet" type="button" id="resetResultFilters">Clear result filters</button>
+            </div>
+            <p class="helper">These filters change the list and map only. The distance filter measures approximate straight-line miles from the centre of High Lane, Stockport, not driving distance. Cars with unknown or ambiguous advertised locations are excluded while a distance limit is selected. Hidden cars appear in the collapsed section beneath the results of each saved search.</p>
+          </details><div id="listingGrid" class="listing-grid"></div>
+          <div id="listingMapPanel" class="listing-map-panel hidden">
+            <div class="map-status"><div><strong id="mapCount">Map of listed cars</strong><span id="mapSubtitle">Showing approximate advertised locations.</span></div><span class="map-legend">● Approximate location</span></div>
+            <div id="listingMap" class="listing-map" aria-label="Map showing car adverts by approximate UK location"></div>
+            <p class="map-attribution">Locations: <a href="https://postcodes.io/" target="_blank" rel="noopener noreferrer">Postcodes.io</a> / Ordnance Survey Open Names. Pins show postcode or town centres, not exact vehicle addresses.</p>
+            <div id="unmappedCars" class="unmapped-cars"></div>
+          </div>
+          <details id="hiddenResultsPanel" class="hidden-results-panel hidden">
+            <summary>Hidden cars in this search <span id="hiddenResultsCount">0</span></summary>
+            <p class="helper">Only hidden from this saved search. They remain in other searches and in your saved shortlist.</p>
+            <div id="hiddenListingGrid" class="listing-grid hidden-listing-grid"></div>
+          </details>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="searchDialog" class="modal wide-modal">
+    <form id="searchForm" method="dialog">
+      <div class="modal-head"><div><div class="eyebrow">YOUR VEHICLE CRITERIA</div><h2 id="searchModalTitle">Create a car search</h2></div><button class="icon-button" value="cancel" formnovalidate aria-label="Close">×</button></div>
+      <p class="form-help">Search websites by car name. Required and excluded terms filter combined adverts in this app; preferred terms rank matches higher without narrowing searches on Facebook or other providers.</p>
+      <div class="import-search-url">
+        <label class="input-block" for="importSearchUrl">Import criteria from an existing car-search URL</label>
+        <div class="import-search-url-row">
+          <input id="importSearchUrl" class="field" type="text" inputmode="url" placeholder="Paste an Auto Trader, eBay, PistonHeads or Facebook search link…" autocomplete="off" spellcheck="false">
+          <button class="button quiet" type="button" id="importSearchUrlButton">Read URL</button>
+        </div>
+        <p class="form-help" id="importSearchStatus" role="status" aria-live="polite">Reads supported URL parameters into the fields below. Review the criteria and any unsupported filters before saving. Your original link is not saved.</p>
+      </div>
+      <div class="filter-layout">
+        <label class="input-block full">Car name or search phrase<input id="searchName" class="field" required maxlength="90" placeholder="e.g. BMW M2"></label>
+        <label class="input-block full">Required keywords<input id="carRequiredKeywords" class="field" maxlength="500" placeholder="e.g. C4S OR Carrera 4S, manual"></label>
+        <p class="form-help filter-hint">Use <strong>OR</strong> or <strong>|</strong> for alternatives within a group. Commas separate groups. Example: <strong>C4S OR Carrera 4S, manual</strong> means (C4S or Carrera 4S) and manual.</p>
+        <label class="input-block full">How should required groups match?
+          <select class="field" id="carRequiredLogic">
+            <option value="all">AND — match every group (default)</option>
+            <option value="any">OR — match at least one group</option>
+          </select>
+        </label>
+        <label class="input-block full">Preferred keywords (rank matches higher)<input id="carPreferredKeywords" class="field" maxlength="500" placeholder="e.g. performance exhaust, Harman Kardon"></label>
+        <p class="form-help filter-hint">Optional words or phrases, separated by commas. Matching cars appear first under Best preferred match; other cars remain visible. Existing extra keywords become preferred keywords.</p>
+        <label class="input-block full">Exclude keywords (any match removes car)<input id="carExcludeKeywords" class="field" maxlength="500" placeholder="e.g. convertible, wrapped, Cat S" aria-describedby="excludeKeywordsHelp"></label>
+        <p class="form-help filter-hint" id="excludeKeywordsHelp">Separate unwanted words or phrases with commas. A match in any grouped advert excludes the car from this search. Matching ignores capitalisation and punctuation. Saving changes updates existing results immediately.</p>
+        <label class="input-block">Minimum price (£)<input id="carPriceMin" type="number" inputmode="numeric" min="0" class="field" placeholder="Any"></label>
+        <label class="input-block">Maximum price (£)<input id="carPriceMax" type="number" inputmode="numeric" min="0" class="field" placeholder="Any"></label>
+        <label class="input-block">Minimum mileage<input id="carMileageMin" type="number" inputmode="numeric" min="0" class="field" placeholder="Any"></label>
+        <label class="input-block">Maximum mileage<input id="carMileageMax" type="number" inputmode="numeric" min="0" class="field" placeholder="Any"></label>
+        <label class="input-block">Year from<input id="carYearMin" type="number" inputmode="numeric" min="1950" max="2035" class="field" placeholder="Any"></label>
+        <label class="input-block">Year to<input id="carYearMax" type="number" inputmode="numeric" min="1950" max="2035" class="field" placeholder="Any"></label>
+        <label class="input-block">Engine size from (litres)<input id="carEngineMin" type="number" inputmode="decimal" min="0.1" max="12" step="0.1" class="field" placeholder="Any"></label>
+        <label class="input-block">Engine size to (litres)<input id="carEngineMax" type="number" inputmode="decimal" min="0.1" max="12" step="0.1" class="field" placeholder="Any"></label>
+        <label class="input-block">Minimum BHP<input id="carBhpMin" type="number" inputmode="numeric" min="1" max="2000" class="field" placeholder="Any"></label>
+        <label class="input-block">Maximum BHP<input id="carBhpMax" type="number" inputmode="numeric" min="1" max="2000" class="field" placeholder="Any"></label>
+        <label class="input-block">Transmission
+          <select id="carTransmission" class="field"><option value="any">Any</option><option value="automatic">Automatic / DCT / DSG / PDK</option><option value="manual">Manual</option></select>
+        </label>
+      </div>
+      <div class="filter-group"><span class="field-label">Exterior colours — select any</span>
+        <div id="colourChoices" class="choice-grid" role="group" aria-label="Exterior colours"></div>
+        <label class="colour-strict-choice"><input type="checkbox" id="carStrictColour">
+          Also include cars whose exterior colour is unknown</label>
+        <p class="form-help">Selected colours match confirmed exterior paint by default. Tick this only if you also want adverts where the paint colour is not stated. Colours of seats and wheels are not treated as body paint.</p>
+      </div>
+      <div class="filter-group"><span class="field-label">Search these websites</span>
+        <div class="source-choice-row">
+          <label><input type="checkbox" name="carSite" value="autotrader" checked> Auto Trader</label>
+          <label><input type="checkbox" name="carSite" value="ebay" checked> eBay</label>
+          <label><input type="checkbox" name="carSite" value="pistonheads" checked> PistonHeads</label>
+          <label><input type="checkbox" name="carSite" value="facebook" checked> Facebook</label>
+        </div>
+      </div>
+      <div class="form-msg" id="searchFormMessage"></div>
+      <div class="modal-actions"><button class="button quiet" value="cancel" formnovalidate>Cancel</button><button class="button dark" id="saveSearchBtn" value="default">Save vehicle search</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="carDialog" class="modal detail-modal">
+    <div class="modal-head"><div><div class="eyebrow">VEHICLE DETAILS</div><h2>All adverts for this car</h2></div><button class="icon-button" id="closeCarDialog" aria-label="Close">×</button></div>
+    <div id="carDialogBody"></div>
+  </dialog>
+
+  <dialog id="manualCarDialog" class="modal wide-modal">
+    <form id="manualCarForm">
+      <div class="modal-head"><div><div class="eyebrow">SAVED CARS</div><h2 id="manualCarModalTitle">Add a car from a listing link</h2></div><button type="button" class="icon-button" id="closeManualCarDialog" aria-label="Close">×</button></div>
+      <p class="form-help" id="manualCarHelp">Paste the URL of an individual advert from Auto Trader, eBay, PistonHeads or Facebook Marketplace. The car is saved immediately and the app tries to fill missing details from the website. You can enter or correct anything yourself.</p>
+      <div class="filter-layout">
+        <label class="input-block full" id="manualCarUrlBlock">Car advert URL
+          <input id="manualCarUrl" class="field" type="url" maxlength="4000" inputmode="url" required placeholder="https://www.autotrader.co.uk/car-details/…">
+        </label>
+        <label class="input-block full">Title / model
+          <input id="manualCarTitle" class="field" maxlength="220" placeholder="e.g. 2003 Porsche 911 Carrera 4S"></label>
+        <label class="input-block">Price (£)
+          <input id="manualCarPrice" type="number" class="field" inputmode="numeric" min="0" max="1000000" placeholder="Unknown"></label>
+        <label class="input-block">Year
+          <input id="manualCarYear" type="number" class="field" min="1950" max="2035" placeholder="Unknown"></label>
+        <label class="input-block">Mileage
+          <input id="manualCarMileage" type="number" class="field" min="0" max="1000000" placeholder="Unknown"></label>
+        <label class="input-block">Location
+          <input id="manualCarLocation" class="field" maxlength="120" placeholder="e.g. Stockport"></label>
+        <label class="input-block">Exterior colour
+          <select id="manualCarColour" class="field">
+            <option value="">Unknown</option>
+            <option value="black">Black</option><option value="white">White</option>
+            <option value="silver">Silver</option><option value="grey">Grey</option>
+            <option value="blue">Blue</option><option value="red">Red</option>
+            <option value="green">Green</option><option value="yellow">Yellow</option>
+            <option value="orange">Orange</option><option value="purple">Purple</option>
+            <option value="brown">Brown</option><option value="gold">Gold</option>
+            <option value="beige">Beige</option><option value="other">Other</option>
+          </select>
+        </label>
+        <label class="input-block">Transmission
+          <select id="manualCarTransmission" class="field">
+            <option value="">Unknown</option><option value="automatic">Automatic / DCT / PDK</option>
+            <option value="manual">Manual</option>
+          </select>
+        </label>
+        <label class="input-block">Engine size (litres)
+          <input id="manualCarEngine" class="field" type="number" min="0.1" max="12" step="0.1" placeholder="Unknown"></label>
+        <label class="input-block">Power (bhp)
+          <input id="manualCarBhp" class="field" type="number" min="1" max="2000" placeholder="Unknown"></label>
+        <label class="input-block full">Registration
+          <input id="manualCarRegistration" class="field" maxlength="24" placeholder="Optional"></label>
+        <label class="input-block full">Image URL
+          <input id="manualCarImage" class="field" type="url" maxlength="1500" placeholder="Optional public photo link"></label>
+        <label class="input-block full">Description
+          <textarea id="manualCarDescription" class="field" rows="3" maxlength="4000" placeholder="Advert details, notable options or condition"></textarea></label>
+        <label class="input-block full">Personal notes
+          <textarea id="manualCarNotes" class="field" rows="3" maxlength="12000" placeholder="Private notes about this car"></textarea></label>
+      </div>
+      <p class="form-help">Manual changes take precedence over future scans and auto-enrichment. Empty fields on a new car can be completed automatically where the source allows access.</p>
+      <div id="manualCarFormMessage" class="form-msg" role="status"></div>
+      <div class="modal-actions">
+        <button type="button" class="button quiet" id="cancelManualCarDialog">Cancel</button>
+        <button type="submit" class="button dark" id="submitManualCar">Save car</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="facebookDialog" class="modal fb-modal">
+    <div class="modal-head"><div><div class="eyebrow">FACEBOOK MARKETPLACE</div><h2>Connect Facebook to Railway</h2></div><button class="icon-button" id="closeFacebookDialog" aria-label="Close">×</button></div>
+    <p class="form-help">Car Search Hub needs to be signed into Facebook <strong>on its Railway server</strong>, not just in the Facebook app on your phone. This checks Marketplace access before claiming it is connected.</p>
+    <div id="fbLoginMessage" class="fb-message" role="status">Facebook connection has not been checked yet.</div>
+    <p id="fbConnectionDiagnostic" class="helper" role="status"></p>
+    <div id="fbVerification" class="fb-verification hidden">
+      <p class="form-help">Railway has not confirmed a working Marketplace session. First select <strong>View / complete Facebook challenge</strong> to see whether it shows a login form, a security check or an error. Facebook may not send any phone notification. Only use Recheck or enter a code if Facebook actually requests it.</p>
+      <div class="fb-controls">
+        <label class="input-block">One-time Facebook code (only when requested)
+          <input id="fbApprovalCode" class="field" type="text" inputmode="numeric" maxlength="10" autocomplete="one-time-code" placeholder="Verification code">
+        </label>
+        <button class="button quiet" id="fbSendCode">Submit code</button>
+      </div>
+      <div class="settings-line">
+        <button class="button quiet" id="fbRecheck">Recheck Railway Marketplace access</button>
+        <button class="text-button" id="fbPreviewButton">View Facebook's Railway screen</button>
+      </div>
+      <div id="fbInteractive" class="fb-interactive hidden">
+        <p class="form-help"><strong>Complete Facebook's challenge:</strong> Tap a button or input on the screen below. If Facebook asks for text or a code, tap the appropriate field first, then use the controls beneath it. This is the live Railway browser, not your phone's Facebook session.</p>
+        <div class="fb-preview-scroll" role="group" aria-label="Interactive Facebook challenge screen">
+          <img id="fbPreview" class="fb-preview" alt="Interactive view of Facebook verification in Railway. Tap the screenshot to press buttons." referrerpolicy="no-referrer">
+        </div>
+        <div class="fb-remote-controls">
+          <label class="input-block">Text or code requested on the Facebook screen
+            <input id="fbChallengeText" class="field" type="password" maxlength="120" autocomplete="off" placeholder="Only if Facebook asks for it">
+          </label>
+          <button class="button quiet" id="fbChallengeType" type="button">Type in selected field</button>
+          <button class="button quiet" id="fbChallengeEnter" type="button">Enter</button>
+          <button class="button quiet" id="fbChallengeTab" type="button">Tab</button>
+          <button class="button quiet" id="fbChallengeScrollUp" type="button">Scroll up</button>
+          <button class="button quiet" id="fbChallengeScrollDown" type="button">Scroll down</button>
+          <button class="button quiet" id="fbChallengeRefresh" type="button">Update screen</button>
+        </div>
+        <p class="helper">When the challenge is complete, select <strong>Recheck Railway Marketplace access</strong>. The app only saves a session after Facebook actually allows Marketplace results. Do not share this screen if it shows personal details.</p>
+      </div>
+      <p class="helper">Any Facebook challenge must be completed by you. The app does not bypass verification or transfer your phone's Facebook login to Railway.</p>
+    </div>
+    <p class="helper">Changed your Facebook password in Railway? Clear the previous server session first, then connect again. This does not remove saved car searches or notes.</p>
+    <div class="modal-actions"><button class="button quiet" id="fbReset">Clear old FB session</button><button class="button quiet" id="fbCancel">Close</button><button class="button dark" id="fbConnect">Connect and check Facebook</button></div>
+  </dialog>
+
+  <dialog id="noteDialog" class="modal note-dialog"><form id="noteForm" method="dialog"><div class="modal-head"><div><div class="eyebrow">YOUR SHORTLIST</div><h2>Listing notes</h2></div><button class="icon-button" value="cancel" formnovalidate aria-label="Close">×</button></div><p class="note-car" id="noteCarTitle"></p><label class="field-label" for="noteText">Your notes</label><textarea id="noteText" class="field" rows="7" placeholder="Service history, seller conversation, negotiation target, faults to check…"></textarea><div class="modal-actions"><button class="button quiet" value="cancel">Cancel</button><button class="button dark" id="saveNoteBtn" value="default">Save note</button></div></form></dialog>
+
+  <dialog id="settingsDialog" class="modal"><div class="modal-head"><div><div class="eyebrow">PREFERENCES</div><h2>Settings & backup</h2></div><button class="icon-button" id="closeSettings" aria-label="Close">×</button></div><p class="form-help">Searches, listings, saved items and notes are stored on the server and appear on all your devices when you sign in.</p><div class="settings-line"><button class="button quiet" id="facebookLoginSettings">Connect Facebook</button><span class="helper">Verify the server browser can access Marketplace</span></div><label class="field-label" for="pageDepth">Pages to check per search URL</label><select id="pageDepth" class="field"><option value="1">1 page (quick)</option><option value="3">3 pages</option><option value="5">5 pages</option><option value="10">10 pages</option><option value="20">20 pages (thorough, slower)</option></select><p class="helper">Facebook uses scrolling rather than pages. The results shown are those successfully loaded into the page, not necessarily every listing on a site.</p><div class="settings-line"><button class="button quiet" id="exportBackup">↓ Export backup</button><button class="button quiet" id="importBackup">↑ Import backup</button><input id="backupFile" type="file" accept="application/json,.json" class="hidden"></div><p class="helper">Import replaces your current local data. Make an export first. Backups contain your search URLs and private notes. Keep the file secure.</p></dialog>
+
+  <dialog id="deleteDialog" class="modal confirm-dialog"><div class="modal-head"><h2>Delete this search?</h2><button class="icon-button" id="closeDelete" aria-label="Close">×</button></div><p class="form-help" id="deleteDescription">This removes the search and its scan results. Cars already saved to your shortlist are retained.</p><div class="modal-actions"><button class="button quiet" id="cancelDelete">Cancel</button><button class="button danger" id="confirmDelete">Delete search</button></div></dialog>
+
+  <div class="toast-area" id="toastArea" aria-live="polite"></div>
+  <div id="loginOverlay" class="login-overlay hidden"><form id="loginForm" class="login-panel">
+    <div class="brand"><span class="brand-icon">C<span>H</span></span><div><strong>Car Search Hub</strong><small>PRIVATE CAR SEARCH DASHBOARD</small></div></div>
+    <h2>Welcome back.</h2><p>Your searches and saved cars are on your server. Sign in to see them from any device.</p>
+    <label class="field-label" for="loginPassword">Access password</label>
+    <input id="loginPassword" class="field" type="password" autocomplete="current-password" required placeholder="Your dashboard password">
+    <div class="form-msg" id="loginError" role="alert"></div>
+    <button class="button dark" type="submit">Open dashboard</button>
+  </form></div>
+</body>
+</html>
