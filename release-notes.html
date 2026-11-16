@@ -1,1 +1,107 @@
-The requested file reference is not currently visible. Use files.search or files.list to rediscover the file, then retry with a returned ref_id or file_id.
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14313a">
+  <title>What's new · DriveHub</title>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;600;700;800&display=swap');
+:root{--bg:#e9f0ee;--surface:#f7fbf9;--surface2:#e5eeeb;--text:#14292b;--muted:#5c787e;--line:rgba(20,49,58,.14);--green:#2f9166;--blue:#2b8cbe;--yellow:#f0c445;--dark:#14313a;--font-head:"Caprasimo",Georgia,serif;--font-body:"Figtree",system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(20,49,58,.14);--shadow-md:0 7px 24px rgba(20,49,58,.14)}
+*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100dvh;background:var(--bg);color:var(--text);font-family:var(--font-body);-webkit-font-smoothing:antialiased}.hub{width:min(100% - 36px,760px);margin:0 auto;padding:54px 0 70px}.hub-head{margin-bottom:28px}.brand{display:flex;gap:16px;align-items:flex-start}.brand img{width:56px;height:56px;border-radius:18px;box-shadow:var(--shadow-sm)}.kicker{margin:0;font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}h1,h2{font-family:var(--font-head);font-weight:400;letter-spacing:-.015em}h1{margin:7px 0 0;font-size:clamp(38px,8vw,58px);line-height:.96}.intro{max-width:610px;margin:20px 0 0;color:var(--muted);font-size:15px;line-height:1.55}.feature-grid{display:grid;grid-template-columns:1fr;gap:15px}.feature-card{min-height:0;border:1px solid var(--line);border-radius:28px;padding:22px 24px;background:var(--surface);color:inherit;text-decoration:none;display:grid;grid-template-columns:64px minmax(0,1fr) minmax(190px,240px);gap:22px;align-items:center;box-shadow:var(--shadow-sm);transition:transform 160ms ease,box-shadow 180ms ease;overflow:hidden}.feature-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}.feature-card:focus-visible{outline:3px solid rgba(47,145,102,.35);outline-offset:3px}.feature-card.garage{background:linear-gradient(155deg,#f7fbf9 0%,#dcece7 100%)}.feature-card.valuation{background:linear-gradient(155deg,#f7fbf9 0%,#ddecf5 100%)}.feature-card.roads{background:linear-gradient(155deg,#f7fbf9 0%,#f4ebcc 100%)}.feature-card.future{grid-column:1/-1;min-height:125px;border-style:dashed;box-shadow:none;opacity:.72;display:grid;grid-template-columns:54px 1fr;gap:18px;align-items:center}.feature-icon{width:54px;height:54px;border-radius:18px;background:rgba(255,255,255,.78);border:1px solid rgba(20,49,58,.08);display:grid;place-items:center;margin:0;font-size:26px}.feature-icon svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.feature-copy{margin:0;min-width:0}.feature-copy h2{margin:7px 0 8px;font-size:29px;line-height:1.02}.feature-copy>p:last-child{max-width:620px;margin:0;color:var(--muted);font-size:13px;line-height:1.5}.feature-foot{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0;padding:4px 0 4px 22px;border-top:0;border-left:1px solid rgba(20,49,58,.11);font-size:12px;font-weight:800;color:#3f5c63}.feature-foot b{font-size:24px;font-weight:400;line-height:1}.future .feature-icon{margin:0}.future .feature-copy{margin:0}.future .feature-copy h2{font-size:22px}
+@media(max-width:620px){.hub{width:min(100% - 32px,480px);padding-top:48px}.feature-grid{grid-template-columns:1fr}.feature-card{min-height:235px;padding:19px;border-radius:24px;display:flex;flex-direction:column;align-items:stretch;gap:0}.feature-card.future{grid-column:auto;min-height:135px;display:grid;grid-template-columns:54px 1fr;gap:16px}.feature-icon{margin-bottom:25px}.feature-card.future .feature-icon{margin:0}.feature-copy{margin-top:auto}.feature-foot{margin-top:22px;padding:14px 0 0;border-left:0;border-top:1px solid rgba(20,49,58,.11)}.brand img{width:48px;height:48px}.feature-copy h2{font-size:27px}}
+
+/* v142.3 continuity/status details */
+.feature-foot-copy{display:grid;gap:4px;min-width:0}
+.feature-foot-copy>span{font-weight:800}
+.feature-foot-copy small{display:flex;align-items:center;gap:6px;color:#6e8589;font-size:9.5px;font-weight:700;line-height:1.25}
+.feature-foot-copy small::before{content:"";width:6px;height:6px;border-radius:50%;background:#a6bab7;flex:0 0 auto}
+.feature-foot-copy small[data-state="ready"]::before{background:#2f9166}
+.feature-foot-copy small[data-state="warn"]::before{background:#d39a1f}
+.feature-foot-copy small[data-state="offline"]::before{background:#9aa9aa}
+@media(min-width:760px){.hub{width:min(100% - 64px,1040px)}.hub-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,.72fr);gap:48px;align-items:end}.intro{margin:0 0 4px}.feature-card{min-height:150px}}
+
+
+/* v142.3 recent-tool continuity */
+.resume-tool{margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:18px;max-width:360px;padding:11px 13px 11px 15px;border:1px solid rgba(20,49,58,.12);border-radius:16px;background:rgba(255,255,255,.62);color:var(--dark,#14313a);text-decoration:none;transition:background .18s ease,border-color .18s ease,transform .16s ease}
+.resume-tool:hover{background:#fff;border-color:rgba(20,49,58,.22);transform:translateY(-1px)}
+.resume-tool span{display:grid;gap:3px}.resume-tool small{font-size:9px;font-weight:850;letter-spacing:.13em;color:#648082}.resume-tool strong{font-size:12px}.resume-tool b{font-size:20px;font-weight:400;color:#6c8587}
+.resume-tool[hidden]{display:none!important}
+
+.feature-card.search{background:linear-gradient(155deg,#f7fbf9 0%,#e3e7f3 100%)}
+
+.hub-footer{padding:0 20px 34px;text-align:center}.hub-footer a{font-size:12px;font-weight:750;color:#648082;text-decoration:none}.hub-footer a:hover{text-decoration:underline}
+
+/* The global header occupies the top 76/68px on every DriveHub page. */
+.hub{padding-top:calc(var(--dh-top-nav-height,76px) + 32px)}
+@media(max-width:620px){.hub{padding-top:calc(var(--dh-top-nav-height,68px) + 22px)}}
+
+</style>
+  <style>
+    .release-page{max-width:850px}
+    .release-back{display:inline-block;margin:0 0 30px;color:#245e69;font-size:14px;font-weight:800;text-decoration:none}
+    .release-page h1{font-size:clamp(35px,7vw,50px);line-height:1.08}
+    .release-page h2{font-family:var(--font-body);font-size:22px;margin:26px 0 13px}
+    .release-page p,.release-page li{font-size:15px;line-height:1.65;color:#48656c}
+    .release-card{border:1px solid var(--line);background:#f7fbf9;border-radius:22px;padding:clamp(20px,4vw,32px);margin:24px 0}
+    .release-card li+li{margin-top:9px}
+    .release-card code{font-size:.91em;background:#e5eeeb;border-radius:5px;padding:2px 5px}
+  </style>
+</head>
+<body>
+  <main class="hub release-page">
+    <a class="release-back" href="index.html">‹ DriveHub tools</a>
+    <p class="kicker">RELEASE HISTORY</p>
+    <h1>What's new</h1>
+    <article class="release-card">
+      <p class="kicker">v142.26 · 16 November 2026</p>
+      <h2>Photo colour estimates, location maps and one DriveHub header</h2>
+      <p>Car Search now estimates paint colour from advert photos without AI, with strict confidence thresholds and manual/advert colours taking priority. Click the location or green map pin on any listing to open an approximate, zoomed-out regional map. Home and all four tools now share the same light DriveHub header; select the logo to return to Home.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.25 · 16 November 2026</p>
+      <h2>Car Search now looks and behaves like DriveHub</h2>
+      <p>Fixed the tiny Car Search window seen when opening it from DriveHub: the embedded tool now fills the available browser space on phones and desktops. Updated the original Car Search interface with DriveHub typography, colour palette, logo, navigation, controls and cards, without changing search results or saved cars.</p>
+      <p>Also corrected the standalone launcher's Car Search link to point to the current DriveHub service.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.24 · 16 November 2026</p>
+      <h2>Full original Car Search Hub restored</h2>
+      <p>Restores the complete saved original Car Finder application, including its Playwright browser-based scanner, Facebook session manager, eBay integration, photo comparison, geocoded map, editable saved cars and original interface.</p>
+      <p>Everything now runs inside the single DriveHub Railway service. The original backend and all its tests are included in the DriveHub repository. The service uses the existing DriveHub volume; a Car Search password protects private saved-car data.</p>
+      <p>Website scan success still depends on the sites allowing automated access and any required account credentials.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.24 · 16 November 2026</p>
+      <h2>Car Search now runs inside DriveHub</h2>
+      <p>Car Search now has its own native backend and user interface in the DriveHub repository. No separate Car Finder service or domain is required.</p>
+      <ul>
+        <li>Persistent searches and saved cars now live in DriveHub's existing /data volume, with import/export backups.</li>
+        <li>Add cars from supported advert URLs; edit vehicle details, notes and asking prices; save, share, hide and restore cars.</li>
+        <li>Keyword AND/OR combinations, duplicate grouping and merging, display filters and generated search links.</li>
+        <li>Source refresh attempts read public pages and clearly report site restrictions without inventing adverts.</li>
+      </ul>
+      <p><strong>Scanning limitation:</strong> This is a rebuilt Node version. The former Playwright/Facebook authentication, full maps and image hashing are not yet reproduced. Some sites block server-side HTML access; use original links or manual listing entry when that happens.</p>
+      <p><strong>Privacy:</strong> Set <code>CAR_SEARCH_PASSWORD</code> in Railway to protect stored searches and private notes.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.22 · 16 November 2026</p>
+      <h2>Car Search joins DriveHub</h2>
+      <p>DriveHub now brings together four tools. Car Search is available beside MyGarage, Valuation Tool and Road Finder, with its own tool page at <code>/search/</code>.</p>
+      <ul>
+        <li>Browse and manage your existing Car Search searches, merged results, saved cars and notes from within DriveHub.</li>
+        <li>Use the existing Car Search account and persistent data; the original car-searching service remains independent.</li>
+        <li>DriveHub's server safely forwards Car Search requests through a dedicated path, keeping its session and API separate from other tools.</li>
+        <li>The mobile and standalone DriveHub launchers also display Car Search and open its online service when selected.</li>
+        <li>All DriveHub checks and new Car Search integration tests pass.</li>
+      </ul>
+      <p><strong>Hosting note:</strong> Car Search's Python backend must remain running. DriveHub uses the existing Railway endpoint unless configured with <code>CAR_SEARCH_HUB_URL</code>. No saved data is copied or migrated.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.21</p>
+      <h2>MyGarage history and navigation improvements</h2>
+      <p>The previous release improved mobile MOT history containment and separated the Timeline into Upcoming, Today and Past events. All existing tools remain available.</p>
+    </article>
+  </main>
+</body>
+</html>

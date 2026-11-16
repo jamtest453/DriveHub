@@ -206,7 +206,7 @@ async def photo_hash_worker():
                 url = str(record.get('image') or '') if record else ''
                 if not valid_photo_url(url):
                     continue
-                if record.get('photoHash') is not None:
+                if record.get('photoHash') is not None and 'photoColourCheckedAt' in record:
                     continue
             fingerprint = await download_fingerprint(url)
             async with LOCK:
@@ -215,10 +215,27 @@ async def photo_hash_worker():
                     if fingerprint:
                         current['photoHash'] = fingerprint
                         current['photoStatus'] = 'ready'
+                        paint = fingerprint.get('paint')
+                        if paint and paint.get('colour') and paint.get('confidence', 0) >= .78:
+                            current['photoColour'] = paint['colour']
+                            current['photoColourConfidence'] = paint['confidence']
+                            # Manual edits, labelled paint and title claims outrank
+                            # the heuristic image observation.
+                            if (current.get('colourSource') in (None, 'unknown', 'legacy', 'photo')
+                                    and 'colour' not in (current.get('manualFields') or [])):
+                                current['colour'] = paint['colour']
+                                current['colourSource'] = 'photo'
+                        else:
+                            current.pop('photoColour', None)
+                            current.pop('photoColourConfidence', None)
+                            if current.get('colourSource') == 'photo':
+                                current.pop('colour', None)
+                                current['colourSource'] = 'unknown'
                     else:
                         current.pop('photoHash', None)
                         current['photoStatus'] = 'unavailable'
                     current['photoCheckedAt'] = time.time()
+                    current['photoColourCheckedAt'] = time.time()
                     store()
         except Exception:
             # Photos are optional. Never interrupt scans or saved-car updates.
@@ -241,7 +258,7 @@ def schedule_photo_hashes(ids=None, limit=240):
         if added >= limit or PHOTO_QUEUE.qsize() >= 300:
             break
         row = state['listings'].get(item_id)
-        if not row or item_id in PHOTO_PENDING or row.get('photoHash'):
+        if not row or item_id in PHOTO_PENDING or (row.get('photoHash') and 'photoColourCheckedAt' in row):
             continue
         url = row.get('image')
         if not valid_photo_url(url):
@@ -430,6 +447,12 @@ async def enrich_saved_listing(item_id):
                 current.pop('photoHash', None)
                 current.pop('photoStatus', None)
                 current.pop('photoCheckedAt', None)
+                current.pop('photoColourCheckedAt', None)
+                current.pop('photoColour', None)
+                current.pop('photoColourConfidence', None)
+                if current.get('colourSource') == 'photo':
+                    current.pop('colour', None)
+                    current['colourSource'] = 'unknown'
             current["enrichStatus"] = "complete" if filled else "unavailable"
             current["enrichedAt"] = now()
             current["enrichedFields"] = filled
@@ -726,6 +749,12 @@ def update_listing(item, stamp):
         old.pop('photoHash', None)
         old.pop('photoStatus', None)
         old.pop('photoCheckedAt', None)
+        old.pop('photoColourCheckedAt', None)
+        old.pop('photoColour', None)
+        old.pop('photoColourConfidence', None)
+        if old.get('colourSource') == 'photo':
+            old.pop('colour', None)
+            old['colourSource'] = 'unknown'
     changed = ("price" not in (old.get("manualFields") or [])
                and price is not None and old.get('price') is not None and price != old['price'])
     if changed:
@@ -741,7 +770,7 @@ def update_listing(item, stamp):
     # from enrichment remains more authoritative than a title guess.
     incoming = item.get("colourSource") or "unknown"
     prior = old.get("colourSource") or "legacy"
-    rank = {"legacy": 0, "unknown": 0, "title": 1, "explicit": 2}
+    rank = {"legacy": 0, "unknown": 0, "photo": 1, "title": 2, "explicit": 3}
     if "colour" not in locked:
         if incoming in ("title", "explicit") and rank.get(incoming, 0) >= rank.get(prior, 0):
             old["colour"] = item["colour"]

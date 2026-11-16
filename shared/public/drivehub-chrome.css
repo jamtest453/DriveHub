@@ -177,3 +177,50 @@
   .drivehub-network-banner,.drivehub-activity{transition:none}
   .drivehub-activity__spinner{animation:none;border-top-color:rgba(255,255,255,.28)}
 }
+
+
+/* v142.26 · Shared DriveHub header on Home and all four tools. */
+:root{--dh-top-nav-height:76px}
+.drivehub-desktop-nav{
+  position:fixed!important;inset:0 0 auto 0!important;z-index:120!important;
+  width:100%;height:var(--dh-top-nav-height);padding:0 clamp(15px,2.5vw,34px)!important;
+  display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:14px!important;
+  color:#14292b;background:#f7fbf9!important;border-bottom:1px solid rgba(20,49,58,.14)!important;
+  box-shadow:0 1px 3px rgba(20,49,58,.05)!important;font-family:"Figtree",system-ui,sans-serif!important;
+}
+.drivehub-desktop-nav__brand{
+  display:flex!important;align-items:center;gap:10px;min-width:0;flex:0 0 auto;
+  padding:5px 12px 5px 0!important;margin:0!important;border:0!important;
+  border-right:1px solid rgba(20,49,58,.14)!important;background:transparent!important;
+  color:#14313a!important;text-align:left;cursor:pointer;
+}
+.drivehub-desktop-nav__mark{width:43px!important;height:43px!important;display:grid;place-items:center;flex:none}
+.drivehub-desktop-nav__mark svg{display:block;width:43px!important;height:43px!important;border-radius:14px;box-shadow:0 2px 8px rgba(20,49,58,.11)}
+.drivehub-desktop-nav__copy{display:grid;line-height:1.1}
+.drivehub-desktop-nav__copy strong{font:800 14px/1.1 "Figtree",system-ui,sans-serif;color:#14313a!important}
+.drivehub-desktop-nav__copy span{font:650 10px/1.2 "Figtree",system-ui,sans-serif;color:#5c787e!important;margin-top:3px}
+.drivehub-desktop-nav__context{display:grid;gap:2px;min-width:0;flex:0 0 auto}
+.drivehub-desktop-nav__eyebrow{font:800 10px/1.2 "Figtree",system-ui,sans-serif;letter-spacing:.13em;color:#5c787e}
+.drivehub-desktop-nav__context strong{font:400 clamp(20px,2vw,28px)/1.04 "Caprasimo",Georgia,serif;letter-spacing:-.015em;white-space:nowrap;color:#14313a}
+.drivehub-desktop-nav__actions{margin-left:auto!important;min-width:0;flex:0 1 auto;display:flex!important;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none}
+.drivehub-desktop-nav__actions::-webkit-scrollbar{display:none}
+.drivehub-desktop-nav__item{height:40px!important;min-height:40px!important;padding:0 12px!important;gap:7px!important;border:1px solid transparent!important;border-radius:12px!important;background:transparent!important;color:#506d71!important;font:800 12px/1 "Figtree",system-ui,sans-serif!important;white-space:nowrap;text-decoration:none;cursor:pointer;flex:0 0 auto}
+.drivehub-desktop-nav__item.is-active{background:#e1eee8!important;border-color:#c6e1d3!important;color:#176345!important;box-shadow:none!important}
+.drivehub-desktop-nav__item:hover:not(.is-active){background:#e5eeeb!important;color:#14313a!important;text-decoration:none}
+.drivehub-desktop-nav__brand:hover .drivehub-desktop-nav__mark{transform:translateY(-1px)}
+.drivehub-desktop-nav__brand:focus-visible,.drivehub-desktop-nav__item:focus-visible{outline:3px solid #2f9166!important;outline-offset:2px!important}
+@media(max-width:899px){
+ :root{--dh-top-nav-height:68px}
+ .drivehub-desktop-nav{padding:0 12px!important;gap:10px!important}
+ .drivehub-desktop-nav__mark,.drivehub-desktop-nav__mark svg{width:36px!important;height:36px!important;border-radius:11px}
+ .drivehub-desktop-nav__copy span{display:none}
+ .drivehub-desktop-nav__copy strong{font-size:12px}
+ .drivehub-desktop-nav__eyebrow{font-size:8.5px;letter-spacing:.08em}
+ .drivehub-desktop-nav__context strong{font-size:20px}
+ .drivehub-desktop-nav__actions{display:none!important}
+ .drivehub-desktop-nav__brand{padding-right:10px!important}
+ .shell,.app-shell{padding-top:calc(var(--dh-top-nav-height) + 14px)!important}
+ .rf-hero{top:calc(var(--dh-top-nav-height) + 10px)!important;max-height:calc(100dvh - var(--dh-top-nav-height) - 50px)!important}
+ .drivehub-network-banner,.drivehub-activity{top:calc(var(--dh-top-nav-height) + 10px)!important}
+}
+@media(max-width:450px){.drivehub-desktop-nav__context strong{font-size:18px}}

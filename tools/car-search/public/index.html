@@ -6,25 +6,17 @@
   <meta name="theme-color" content="#14313a">
   <meta name="description" content="Track car searches across Auto Trader, eBay, PistonHeads and Facebook Marketplace inside DriveHub.">
   <title>Car Search · DriveHub</title>
-  <link rel="stylesheet" href="styles.css?v=14225">
+  <link rel="stylesheet" href="styles.css?v=14226">
+  <link rel="stylesheet" href="/shared/public/drivehub-chrome.css?v=14226">
 </head>
-<body>
+<body data-drivehub-tool="search">
   <div class="search-shell">
-    <header class="search-header">
-      <div class="search-brand">
-        <img class="brand-logo" src="/icons/drivehub-192.png" alt="">
-        <div class="search-heading"><span class="tool-label">DRIVEHUB · RESEARCH</span><strong>Car Search</strong></div>
-      </div>
-      <nav class="search-actions" aria-label="Car Search navigation">
-        <a class="home-link" href="/" aria-label="Back to DriveHub home"><span class="home-symbol" aria-hidden="true">‹</span><span class="home-label">All tools</span></a>
-        <a class="external-link" id="car-search-external" href="/car-search-app/" target="_blank" rel="noopener noreferrer" aria-label="Open Car Search in a new tab"><span class="external-label">New tab</span><span aria-hidden="true">↗</span></a>
-      </nav>
-    </header>
     <main class="search-workspace">
       <div id="search-loading" class="search-loading" role="status">Opening your saved searches…</div>
       <iframe id="search-frame" title="Car Search Hub — saved searches and vehicles" src="/car-search-app/" allow="clipboard-write" referrerpolicy="same-origin"></iframe>
     </main>
   </div>
-  <script src="app.js?v=14225" defer></script>
+  <script src="app.js?v=14226" defer></script>
+  <script src="/shared/public/drivehub-chrome.js?v=14226" defer></script>
 </body>
 </html>

@@ -109,3 +109,7 @@ a:focus-visible { outline: 3px solid rgba(47,145,102,.6); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
 }
+
+/* The shared DriveHub header is fixed above this full-height workspace. */
+.search-shell{grid-template-rows:minmax(0,1fr)!important;padding-top:var(--dh-top-nav-height,76px);height:100dvh}
+.search-workspace{height:100%;min-height:0}

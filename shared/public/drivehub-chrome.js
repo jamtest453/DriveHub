@@ -5,8 +5,18 @@
   const BRAND_ICON='<svg viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="120" fill="#E8F1EE"/><rect x="112" y="112" width="288" height="288" rx="84" fill="#15333B"/><path d="M181 254 L232 207 H280 L331 254" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/><path d="M203 258 H309 C320 258 329 267 329 278 V320 H183 V278 C183 267 192 258 203 258Z" stroke="#FFFFFF" stroke-width="18" stroke-linejoin="round" fill="none"/><path d="M208 320V341M304 320V341" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/><circle cx="256" cy="289" r="25" fill="#87D7C6"/><path d="M256 272V306M239 289H273" stroke="#15333B" stroke-width="10" stroke-linecap="round"/></svg>';
 
   const init=()=>{
-    if(document.documentElement.dataset.drivehubChrome==='14221')return;
-    document.documentElement.dataset.drivehubChrome='14221';
+    // The original Car Search app is normally inside the /search/ tool frame.
+    // Only show an independent global header if opened directly in a tab.
+    if(location.pathname.startsWith('/car-search-app/')){
+      if(window.parent!==window)return;
+      if(!document.querySelector('link[data-drivehub-header-style]')){
+        const style=document.createElement('link');
+        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14226';
+        style.dataset.drivehubHeaderStyle='true';document.head.appendChild(style);
+      }
+    }
+    if(document.documentElement.dataset.drivehubChrome==='14226')return;
+    document.documentElement.dataset.drivehubChrome='14226';
 
     let sourceNav=null;
     let sourceObserver=null;
@@ -15,9 +25,9 @@
 
     const toolFromLabel=label=>{
       const lower=String(label||'').toLowerCase();
-      return lower.includes('valuation')?'valuation':lower.includes('road')?'roads':lower.includes('garage')?'garage':'';
+      return lower.includes('valuation')?'valuation':lower.includes('road')?'roads':lower.includes('garage')?'garage':lower.includes('search')?'search':'';
     };
-    const displayTool=tool=>tool==='garage'?'MyGarage':tool==='valuation'?'Valuation':tool==='roads'?'Road Finder':'DriveHub';
+    const displayTool=tool=>tool==='garage'?'MyGarage':tool==='valuation'?'Valuation':tool==='roads'?'Road Finder':tool==='search'?'Car Search':'DriveHub';
     const recordRecent=(tool,label)=>{
       if(!tool)return;
       const recent={tool,label:label||displayTool(tool),at:new Date().toISOString()};
@@ -25,9 +35,14 @@
       try{if(window.parent!==window)parent.postMessage({type:'drivehub-tool-visited',recent},'*')}catch{}
     };
     const goHome=()=>{
-      const home=sourceNav?.querySelector('.gateway-home');
-      if(home){home.click();return}
-      try{if(window.parent!==window)parent.postMessage({type:'drivehub-home'},'*');else location.href='/'}catch{}
+      // Header branding always returns to the DriveHub gateway, not a tool's
+      // internal Home section. The standalone file:// launcher uses messages.
+      try{
+        if(location.protocol==='file:' && window.parent!==window){
+          parent.postMessage({type:'drivehub-home'},'*');return;
+        }
+        location.assign('/');
+      }catch{location.href='/'}
     };
     const cleanCloneHtml=el=>{
       const clone=el.cloneNode(true);
@@ -51,28 +66,75 @@
         if(countOriginal&&countProxy){countProxy.textContent=countOriginal.textContent;countProxy.hidden=countOriginal.hidden}
       });
     };
+    // One global header implementation is used by the Home page and every
+    // hosted tool. Bottom navigation remains the source of tool-specific
+    // actions, which the header mirrors on desktop.
+    const routeTool=()=>{
+      const explicit=document.body.dataset.drivehubTool;
+      if(['garage','valuation','roads','search'].includes(explicit))return explicit;
+      const path=location.pathname;
+      if(path.startsWith('/garage/'))return 'garage';
+      if(path.startsWith('/valuation/'))return 'valuation';
+      if(path.startsWith('/roads/'))return 'roads';
+      if(path.startsWith('/search/') || path.startsWith('/car-search-app/'))return 'search';
+      return '';
+    };
+    const ensureGlobalHeader=()=>{
+      if(desktopNav)return desktopNav;
+      const tool=routeTool();
+      const context={
+        '':['YOUR CAR TOOLS','All tools'],
+        garage:['OWNERSHIP','MyGarage'],
+        valuation:['MARKET VALUE','Valuation Tool'],
+        roads:['GO DRIVE','Road Finder'],
+        search:['RESEARCH & SHORTLIST','Car Search']
+      }[tool];
+      const shell=document.createElement('header');
+      shell.className='drivehub-desktop-nav';
+      shell.setAttribute('data-global-header','true');
+      const brand=document.createElement('button');
+      brand.type='button';
+      brand.className='drivehub-desktop-nav__brand';
+      brand.setAttribute('aria-label','Go to DriveHub home');
+      brand.innerHTML=`<span class="drivehub-desktop-nav__mark">${BRAND_ICON}</span><span class="drivehub-desktop-nav__copy"><strong>DriveHub</strong><span>All car tools</span></span>`;
+      brand.addEventListener('click',goHome);
+      shell.appendChild(brand);
+      const heading=document.createElement('div');
+      heading.className='drivehub-desktop-nav__context';
+      heading.innerHTML='<span class="drivehub-desktop-nav__eyebrow"></span><strong></strong>';
+      heading.querySelector('.drivehub-desktop-nav__eyebrow').textContent=context[0];
+      heading.querySelector('strong').textContent=context[1];
+      shell.appendChild(heading);
+      const actions=document.createElement('nav');
+      actions.className='drivehub-desktop-nav__actions';
+      actions.setAttribute('aria-label','DriveHub tool navigation');
+      if(!tool){
+        for(const [name,path] of [['MyGarage','/garage/'],['Valuation','/valuation/'],['Road Finder','/roads/'],['Car Search','/search/']]){
+          const item=document.createElement('a');
+          item.className='drivehub-desktop-nav__item';item.textContent=name;item.href=path;
+          actions.appendChild(item);
+        }
+      }else if(tool==='search'){
+        const newTab=document.createElement('a');
+        newTab.href='/car-search-app/';newTab.target='_blank';newTab.rel='noopener noreferrer';
+        newTab.className='drivehub-desktop-nav__item';newTab.textContent='Open full screen ↗';
+        actions.appendChild(newTab);
+      }
+      shell.appendChild(actions);
+      document.body.appendChild(shell);
+      desktopNav=shell;
+      return shell;
+    };
     const buildDesktopNav=nav=>{
       if(!nav||nav.closest('.drivehub-desktop-nav'))return;
       sourceNav=nav;
       sourceObserver?.disconnect();
-      desktopNav?.remove();
+      const shell=ensureGlobalHeader();
+      const actions=shell.querySelector('.drivehub-desktop-nav__actions');
+      actions.replaceChildren();
       const label=String(nav.getAttribute('aria-label')||'DriveHub').replace(/\s+(?:sections|navigation)$/i,'').trim()||'DriveHub';
       const tool=toolFromLabel(label);
       recordRecent(tool,displayTool(tool));
-
-      const shell=document.createElement('nav');
-      shell.className='drivehub-desktop-nav';
-      shell.setAttribute('aria-label',`${displayTool(tool)} desktop navigation`);
-      const brand=document.createElement('button');
-      brand.type='button';
-      brand.className='drivehub-desktop-nav__brand';
-      brand.setAttribute('aria-label','DriveHub home');
-      brand.innerHTML=`<span class="drivehub-desktop-nav__mark">${BRAND_ICON}</span><span class="drivehub-desktop-nav__copy"><strong>DriveHub</strong><span>${displayTool(tool)}</span></span>`;
-      brand.addEventListener('click',goHome);
-      shell.appendChild(brand);
-
-      const actions=document.createElement('div');
-      actions.className='drivehub-desktop-nav__actions';
       [...nav.querySelectorAll('.nav-btn')].forEach(original=>{
         const proxy=document.createElement('button');
         proxy.type='button';
@@ -84,9 +146,6 @@
         proxy.addEventListener('click',()=>original.click());
         actions.appendChild(proxy);
       });
-      shell.appendChild(actions);
-      document.body.appendChild(shell);
-      desktopNav=shell;
       sourceObserver=new MutationObserver(syncDesktopNav);
       sourceObserver.observe(nav,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','aria-pressed','aria-current','hidden','disabled']});
       syncDesktopNav();
@@ -95,6 +154,7 @@
       const nav=document.querySelector('body > .bottom-nav, #app > .bottom-nav, .bottom-nav');
       if(nav&&nav!==sourceNav)buildDesktopNav(nav);
     };
+    ensureGlobalHeader();
     findSourceNav();
     bodyObserver=new MutationObserver(findSourceNav);
     bodyObserver.observe(document.body,{subtree:true,childList:true});
