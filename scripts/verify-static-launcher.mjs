@@ -1,0 +1,46 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+assert.match(html,/garage-live-status/,'standalone gateway includes MyGarage readiness');
+assert.match(html,/valuation-live-status/,'standalone gateway includes Valuation readiness');
+assert.match(html,/roads-live-status/,'standalone gateway includes Road Finder readiness');
+assert.match(html,/id="resume-tool"/,'standalone gateway includes recent-tool continuation');
+assert.match(html,/drivehub-tool-visited/,'standalone gateway listens for embedded tool visits');
+assert.match(html,/drivehub-notification-response/,'standalone gateway can broker browser notification permission for embedded MyGarage');
+assert.match(html,/push-subscribe/,'DriveHub launcher can broker PushManager subscriptions for embedded MyGarage');
+assert.match(html,/garagePushRegistration/,'DriveHub launcher registers the MyGarage service worker for genuine Web Push');
+
+assert.match(html,/DRIVEHUB_HOSTED_TOOL_URLS=\{garage:'\/garage\/',valuation:'\/valuation\/',roads:'\/roads\/'\}/,'hosted launcher uses real hosted tool routes');
+assert.match(html,/DRIVEHUB_IS_HOSTED=\/\^https\?:\$\/\.test\(location\.protocol\)/,'launcher distinguishes hosted navigation from standalone embedding');
+assert.match(html,/drivehub-embedded-visible/,'standalone launcher tells embedded tools when the iframe is visible');
+const marker='const DRIVEHUB_TOOLS=';
+const start=html.indexOf(marker)+marker.length;
+const end=html.indexOf(';\nconst gateway=',start);
+assert.ok(start>=marker.length&&end>start,'standalone launcher exposes embedded tool payload');
+const payload=JSON.parse(html.slice(start,end));
+for(const name of ['garage','valuation','roads']){
+  const tool=Buffer.from(payload[name]||'','base64').toString('utf8');
+  assert.match(tool,/drivehub-desktop-nav/,'embedded tools include the shared desktop application bar');
+  assert.match(tool,/beginActivity/,'embedded tools include shared activity feedback');
+  assert.match(tool,/drivehubChrome==='14221'/,'embedded tools include the v142.10 shared shell');
+}
+const garage=Buffer.from(payload.garage,'base64').toString('utf8');
+const valuation=Buffer.from(payload.valuation,'base64').toString('utf8');
+const roads=Buffer.from(payload.roads,'base64').toString('utf8');
+assert.doesNotMatch(garage,/icons\/drivehub-192\.png/,'standalone MyGarage embeds every DriveHub logo reference, including logos created later by app JavaScript');
+assert.match(garage,/drivehub\.valuation\.prefillVehicleId/,'standalone MyGarage carries vehicle context into Valuation');
+assert.match(garage,/openDriveHubTool\('roads'\)/,'standalone MyGarage can hand off into Road Finder');
+assert.match(garage,/data-notifications-master/,'standalone MyGarage includes the notification master switch');
+assert.match(garage,/data-notification-channel=\"browser\"/,'standalone MyGarage includes Browser notification settings');
+assert.match(garage,/data-notification-channel=\"email\"/,'standalone MyGarage includes Email notification settings');
+const shareTemplate=garage.indexOf('function shareHtmlDocument');
+const reminderTemplate=garage.indexOf('function reminderModal');
+const firstScriptCloseAfterShare=garage.indexOf('</script>',shareTemplate);
+assert.ok(shareTemplate>=0&&reminderTemplate>shareTemplate,'embedded MyGarage contains share and reminder renderers in order');
+assert.ok(firstScriptCloseAfterShare>reminderTemplate,'standalone builder must not terminate the MyGarage app script inside the vehicle-share HTML template');
+const shareFileBoundary=garage.indexOf('function shareHtmlFile',shareTemplate);
+assert.equal(garage.slice(shareTemplate,shareFileBoundary).includes('data-drivehub-home'),false,'standalone Home helper must not be injected inside shareHtmlDocument');
+assert.doesNotMatch(roads,/id=\"loading\"|id=\"status\"/,'standalone Road Finder has no duplicate local status pills');
+assert.match(roads,/release\.update=/,'standalone Road Finder includes the shared update-in-place activity lifecycle');
+assert.match(valuation,/drivehub\.valuation\.prefillVehicleId/,'standalone Valuation accepts MyGarage vehicle context');
+console.log('Standalone DriveHub parity checks passed');

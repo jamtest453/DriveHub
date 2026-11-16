@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const [, , version, file, checksum, channelArg='stable', minimumNativeArg='1', sessionKeyArg='']=process.argv;
+const channel=String(channelArg||'stable').toLowerCase();
+const minimumNativeVersionCode=Number(minimumNativeArg||1);
+if(!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(String(version||'')))throw new Error('Version must be semver, e.g. 142.21.0');
+if(!['stable','beta'].includes(channel))throw new Error('Channel must be stable or beta');
+if(!file||path.basename(file)!==file)throw new Error('Bundle file must be a filename inside app-updates/bundles');
+if(!checksum||String(checksum).length<8)throw new Error('Checksum is required');
+if(!Number.isInteger(minimumNativeVersionCode)||minimumNativeVersionCode<1)throw new Error('minimumNativeVersionCode must be a positive integer');
+const bundlePath=path.join(ROOT,'app-updates','bundles',file);
+if(!fs.existsSync(bundlePath))throw new Error(`Bundle not found: ${bundlePath}`);
+const channelsPath=path.join(ROOT,'app-updates','channels.json');
+const channels=JSON.parse(fs.readFileSync(channelsPath,'utf8'));
+channels[channel]={version:String(version),file,checksum:String(checksum),minimumNativeVersionCode,sessionKey:String(sessionKeyArg||''),enabled:true};
+fs.writeFileSync(channelsPath,JSON.stringify(channels,null,2)+'\n');
+console.log(`Promoted Android OTA ${version} to ${channel} (native build >= ${minimumNativeVersionCode}${sessionKeyArg?', encrypted':''})`);
