@@ -1,0 +1,23 @@
+{
+  "name": "drivehub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check shared/public/drivehub-runtime.js && node --check gateway/public/app.js && node --check tools/my-garage/server/api.js && node --check tools/my-garage/server/notifications.js && node --check cloudflare/notification-relay/worker.js && node --check tools/my-garage/public/js/app.js && node --check tools/my-garage/public/js/app.bundle.js && node --check tools/my-garage/public/js/storage/assets.js && node --check tools/my-garage/public/js/storage/database.js && node --check tools/my-garage/public/js/services/vehicleLookup.js && node --check tools/my-garage/public/js/services/googleDriveSync.js && node --check tools/my-garage/public/service-worker.js && node --check tools/valuation/server/api.js && node --check tools/valuation/public/app.js && node --check tools/road-finder/server/api.js && node --check tools/road-finder/public/core.js && node --check tools/road-finder/public/road-quality.js && node --check tools/road-finder/public/routing.js && node --check tools/road-finder/public/app.js && node --check tools/road-finder/public/ui.js && node --check tools/road-finder/public/ui-renderers.js && npm run test:shared && npm run test:garage && npm run test:valuation && npm run test:roads && npm run test:static && npm run test:navigation && npm run test:car-search && npm run test:android",
+    "build:static": "node scripts/build-static-launcher.mjs",
+    "test:roads": "node tools/road-finder/tests/core.test.mjs && node tools/road-finder/tests/server-routing.test.mjs && node tools/road-finder/tests/mobile-workspace.test.mjs && node tools/road-finder/tests/quality-benchmark.mjs",
+    "test:valuation": "node tools/valuation/tests/ui.test.mjs",
+    "test:garage": "node tools/my-garage/tests/ui.test.mjs",
+    "test:shared": "node shared/tests/chrome.test.mjs",
+    "test:static": "npm run build:static && node scripts/verify-static-launcher.mjs",
+    "test:navigation": "node tests/navigation-load.test.mjs",
+    "test:car-search": "node tools/car-search/tests/integration.test.mjs",
+    "build:android-web": "node scripts/build-android-web.mjs",
+    "test:android": "node tests/android-update.test.mjs",
+    "promote:android-ota": "node scripts/promote-android-ota.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

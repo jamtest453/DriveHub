@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="theme-color" content="#14313a"/>
+  <meta name="description" content="Road Finder scores nearby roads and builds driving routes around the places you want to explore."/>
+  <title>Road Finder · DriveHub</title>
+  <link rel="icon" href="../../../gateway/public/icons/drivehub-192.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css"/>
+  <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
+  <link rel="stylesheet" href="style.css?v=14221">
+  <link rel="stylesheet" href="../../../shared/public/drivehub-chrome.css?v=14221">
+</head>
+<body class="mobile-workspace-search">
+<div id="app" class="rf-app">
+
+  <div id="map"></div>
+
+  <div class="rf-column">
+
+    <!-- Ink hero: DriveHub's dark header block, holding the search -->
+    <section id="topSearchPanel" class="rf-hero" aria-label="Road Finder search">
+      <div class="hero-top hero-top--minimal">
+        <p class="hero-kicker">SEARCH</p>
+        <button id="topToggleBtn" type="button" class="hero-icon" aria-expanded="true" aria-label="Collapse search">
+          <svg class="top-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>
+        </button>
+      </div>
+
+      <div class="top-collapsible">
+        <div id="searchSection" class="search-section">
+          <form class="search-shell" id="searchForm" novalidate>
+
+            <section class="control-card search-kind-card" aria-labelledby="searchKindLabel">
+              <p class="eyebrow">Search type</p>
+              <h2 class="control-title" id="searchKindLabel">What do you want to find?</h2>
+              <div class="segmented search-kind-selector" role="group" aria-label="Choose what to find">
+                <button id="searchKindRoads" class="seg-btn active" type="button" aria-pressed="true">Roads</button>
+                <button id="searchKindRoutes" class="seg-btn" type="button" aria-pressed="false">Routes</button>
+                <button id="searchKindA2b" class="seg-btn" type="button" aria-pressed="false">A to B</button>
+              </div>
+            </section>
+
+            <section id="roadSearchControls" class="control-card">
+              <p class="eyebrow" id="roadSearchEyebrow">Explore</p>
+              <h2 class="control-title" id="roadSearchTitle">Search area</h2>
+              <p class="control-copy" id="roadSearchCopy">Look for rewarding roads around a town, landmark or well-known route.</p>
+
+              <div class="field-stack">
+                <div class="field field--location">
+                  <label class="search-label" id="addrLabel" for="addr">Location</label>
+                  <div class="field-input-wrap">
+                    <svg class="field-lead" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4-4"/></svg>
+                    <input class="search-input" id="addr" placeholder="Peak District, Snake Pass..." type="text"/>
+                    <button aria-label="Use my location" id="locateBtn" type="button" class="icon-btn">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v2m0 16v2M4 12H2m20 0h-2m-2 0a8 8 0 11-16 0 8 8 0 0116 0z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div id="a2bDivider" style="display:none"></div>
+
+                <div class="field field--large" id="a2bToSlot" style="display:none;">
+                  <label class="search-label" for="addrTo">Destination</label>
+                  <div class="field-input-wrap">
+                    <svg class="field-lead" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.1 7-11a7 7 0 10-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+                    <input class="search-input" id="addrTo" placeholder="Where are you heading?" type="text"/>
+                  </div>
+                </div>
+
+                <div class="field field--small radius-field">
+                  <label class="search-label" id="radiusLabel" for="dist">Radius</label>
+                  <div class="field-input-wrap compact">
+                    <input class="radius-input" id="dist" inputmode="numeric" min="1" max="100" type="number" value="10"/>
+                    <span class="field-suffix">km</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="control-actions">
+                <button class="btn btn--primary" id="searchBtn" type="submit">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4-4"/></svg>
+                  <span>Find roads</span>
+                </button>
+                <p class="hint" id="roadSearchHint" style="display:none"></p>
+              </div>
+            </section>
+
+            <section id="routeSearchControls" class="control-card route-builder-card" style="display:none">
+              <p class="eyebrow" id="routeBuilderEyebrow">Route builder</p>
+              <h2 class="control-title" id="routeBuilderTitle">Build a drive</h2>
+              <p class="control-copy" id="routeBuilderCopy">Generate loops or A-to-B drives from the roads in your search area.</p>
+
+              <div id="routeBuilderTools">
+                <div class="segmented segmented--sub toggle-row">
+                  <button class="seg-btn active" id="modeDistanceBtn" type="button">By distance</button>
+                  <button class="seg-btn" id="modeTimeBtn" type="button">By time</button>
+                </div>
+
+                <div id="distSliderWrap" class="slider-stack">
+                  <div class="route-slider-block">
+                    <div class="route-slider-head"><span>Minimum distance</span><span class="route-slider-value" id="routeMinValue">1 km</span></div>
+                    <input class="route-slider" id="routeMinRange" max="50" min="1" step="1" type="range" value="1"/>
+                  </div>
+                  <div class="route-slider-block">
+                    <div class="route-slider-head"><span>Maximum distance</span><span class="route-slider-value" id="routeMaxValue">50 km</span></div>
+                    <input class="route-slider" id="routeMaxRange" max="50" min="1" step="1" type="range" value="50"/>
+                  </div>
+                </div>
+
+                <div id="timeSliderWrap" class="slider-stack" style="display:none;">
+                  <div class="route-slider-block">
+                    <div class="route-slider-head"><span>Minimum drive time</span><span class="route-slider-value" id="routeMinTimeValue">15 mins</span></div>
+                    <input class="route-slider" id="routeMinTime" max="180" min="5" step="5" type="range" value="10"/>
+                  </div>
+                  <div class="route-slider-block">
+                    <div class="route-slider-head"><span>Maximum drive time</span><span class="route-slider-value" id="routeMaxTimeValue">120 mins</span></div>
+                    <input class="route-slider" id="routeMaxTime" max="180" min="5" step="5" type="range" value="120"/>
+                  </div>
+                </div>
+
+                <div class="control-actions">
+                  <button class="btn btn--primary" id="routeSearchBtn" type="button">Build routes</button>
+                  <p class="hint" id="routeSearchHint" style="display:none">Search an area first, then build the drive.</p>
+                </div>
+              </div>
+            </section>
+
+            <div class="hero-extras">
+              <button id="liveLocationBtn" type="button" class="btn btn--quiet">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                Show live location
+              </button>
+
+              <details class="search-options-details">
+                <summary>Search options</summary>
+                <label class="search-option-row">
+                  <input id="useCacheToggle" type="checkbox" checked/>
+                  <span><strong>Reuse cached map data</strong><small>Faster repeat searches. Turn off to force a fresh OpenStreetMap query.</small></span>
+                </label>
+              </details>
+            </div>
+          </form>
+        </div>
+
+        <button aria-expanded="false" class="btn btn--quiet scoring-toggle" hidden id="scoringToggle" type="button">
+          <span>How the Road Score works</span>
+          <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+
+        <div class="scoring-panel" hidden id="scoringPanel">
+          <p>The <strong>Road Score</strong> estimates how rewarding a road is to drive, from its geometry, flow, scenery and surface quality.</p>
+          <ul class="criteria-list">
+            <li class="criteria-item"><span class="criteria-dot green"></span><span class="criteria-desc"><strong>Geometry</strong> — bends, rhythm and direction change.</span></li>
+            <li class="criteria-item"><span class="criteria-dot green"></span><span class="criteria-desc"><strong>Flow</strong> — enough uninterrupted road to feel worthwhile.</span></li>
+            <li class="criteria-item"><span class="criteria-dot blue"></span><span class="criteria-desc"><strong>Road quality</strong> — width, lanes, surface and condition.</span></li>
+            <li class="criteria-item"><span class="criteria-dot blue"></span><span class="criteria-desc"><strong>Scenery</strong> — viewpoints, water, woodland and open country.</span></li>
+            <li class="criteria-item"><span class="criteria-dot yellow"></span><span class="criteria-desc"><strong>Confidence</strong> — how complete the underlying map data is.</span></li>
+          </ul>
+          <p class="scoring-foot">Road Score is a discovery aid, not a safety rating. Always follow local signs, access restrictions and conditions.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results sheet -->
+    <aside id="sidebar" class="rf-sheet collapsed" aria-label="Road Finder results">
+      <button id="sheetToggle" class="sheet-toggle" type="button" aria-expanded="false">
+        <span class="sheet-grip" aria-hidden="true"></span>
+        <span class="sheet-toggle__text">Results</span>
+        <svg class="sheet-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+
+      <div id="sidebarPanel">
+        <div class="results-header">
+          <div class="results-header__text">
+            <p class="eyebrow">Results</p>
+            <h2 id="resultsTitle">Best roads</h2>
+          </div>
+          <div class="results-header__actions">
+            <span id="toolbarCount" class="count-pill">Ready</span>
+            <button id="resultsCollapseBtn" type="button" class="results-collapse-btn" aria-expanded="true" aria-label="Collapse results">
+              <svg class="results-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="filtersAccordion" class="results-controls">
+          <section class="panel-section" id="filtersSection">
+            <div id="filterChips" class="filter-chip-row">
+              <button aria-pressed="false" class="chip fav-chip" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>Saved
+              </button>
+              <button aria-pressed="false" class="chip picks-chip" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v4a4 4 0 01-8 0z"/><path d="M8 6H5a3 3 0 003 3M16 6h3a3 3 0 01-3 3"/><path d="M10 12h4v4h-4zM8 20h8"/></svg>Top picks
+              </button>
+              <details class="dropdown-filter" id="roadScoreFilter">
+                <summary class="chip">Road score <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+                <div class="dropdown-panel">
+                  <label><input type="checkbox" value="tier1" checked> <span class="dot" style="background:var(--tier1)"></span>Top roads 70+</label>
+                  <label><input type="checkbox" value="tier2" checked> <span class="dot" style="background:var(--tier2)"></span>Exceptional 50–69</label>
+                  <label><input type="checkbox" value="tier3"> <span class="dot" style="background:var(--tier3)"></span>Great 30–49</label>
+                  <label><input type="checkbox" value="tier4"> <span class="dot" style="background:var(--tier4)"></span>Good 0–29</label>
+                </div>
+              </details>
+              <label id="debugLabel" class="debug-toggle" style="display:none;">
+                <input id="debugToggle" type="checkbox"/> Debug
+              </label>
+            </div>
+
+            <div class="distance-filter" id="routeFilters" style="display:none;">
+              <p class="eyebrow">Route distance</p>
+              <div class="range-row">
+                <div class="range-wrap min-w"><input id="minRouteDist" max="500" min="1" type="number" value="5"/><span class="range-suf">km</span></div>
+                <span class="range-join">–</span>
+                <div class="range-wrap max-w"><input id="maxRouteDist" max="500" min="1" type="number" value="300"/><span class="range-suf">km</span></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="resultsSection" class="results-section">
+          <div id="debugSearchWrap" style="display:none;">
+            <input id="debugSearchInput" type="text" placeholder="Search all processed roads..." class="debug-search-input"/>
+            <div id="debugSearchResults" class="debug-search-results"></div>
+          </div>
+
+          <section id="results">
+            <div class="empty-state">
+              <div class="empty-illustration" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M7 21 11 3M17 21 13 3M9.3 13h5.4M10.2 8h3.6M8.5 17h7"/></svg>
+              </div>
+              <h3>No roads yet</h3>
+              <p>Search a town, landmark or well-known road to see what's worth driving nearby.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- DriveHub primary navigation -->
+  <nav class="bottom-nav" aria-label="Road Finder sections">
+    <a id="navHome" class="nav-btn gateway-home" href="../../../index.html" aria-label="DriveHub home">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M9.5 20v-6h5v6"/></svg></span>
+    </a>
+    <button id="navSearch" class="nav-btn active" type="button" aria-pressed="true">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></span>
+      <span class="nav-label">Search</span>
+    </button>
+    <button id="navResults" class="nav-btn" type="button" aria-pressed="false">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12M6 12h12M6 18h12"/><circle cx="3" cy="6" r=".6" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r=".6" fill="currentColor" stroke="none"/><circle cx="3" cy="18" r=".6" fill="currentColor" stroke="none"/></svg></span>
+      <span class="nav-label">Results</span>
+      <span id="mobileResultsCount" class="nav-count" hidden></span>
+    </button>
+    <button id="navMap" class="nav-btn" type="button" aria-pressed="false">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6.4v13.2L9 17l6 2.6 6-2.4V4l-6 2.4z"/><path d="M9 4v13M15 6.4v13.2"/></svg></span>
+      <span class="nav-label">Map</span>
+    </button>
+  </nav>
+
+</div>
+
+<script src="../../../shared/public/drivehub-runtime.js?v=14221"></script>
+<script src="core.js?v=14114"></script>
+<script src="road-quality.js?v=14114"></script>
+<script src="routing.js?v=14114"></script>
+<script src="ui.js?v=14114"></script>
+<script src="ui-renderers.js?v=14114"></script>
+<script src="../../../shared/public/drivehub-chrome.js?v=14221"></script>
+<script src="app.js?v=14221"></script>
+</body>
+</html>

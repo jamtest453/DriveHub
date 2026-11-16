@@ -1,0 +1,19 @@
+name = "drivehub-notification-relay"
+main = "worker.js"
+compatibility_date = "2026-08-29"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "drivehub-notifications"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Add these as Worker secrets, not plaintext vars:
+# wrangler secret put RELAY_SECRET
+# wrangler secret put RESEND_API_KEY
+# wrangler secret put EMAIL_FROM
+# wrangler secret put VAPID_PUBLIC_KEY
+# wrangler secret put VAPID_PRIVATE_KEY
+# wrangler secret put VAPID_SUBJECT

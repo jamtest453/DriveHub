@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#14313a">
+  <meta name="description" content="Track car searches across Auto Trader, eBay, PistonHeads and Facebook Marketplace inside DriveHub.">
+  <title>Car Search · DriveHub</title>
+  <link rel="stylesheet" href="styles.css?v=14222">
+</head>
+<body>
+  <div class="search-shell">
+    <header class="search-header">
+      <a class="home-link" href="/" aria-label="Back to DriveHub tools"><span class="home-symbol">‹</span><span>DriveHub</span></a>
+      <div class="search-heading"><span class="tool-label">RESEARCH &amp; SHORTLIST</span><strong>Car Search</strong></div>
+      <a class="external-link" id="car-search-external" href="/car-search-app/" target="_blank" rel="noopener noreferrer">Open full screen ↗</a>
+    </header>
+    <main class="search-workspace">
+      <div id="search-loading" class="search-loading" role="status">Opening your saved searches…</div>
+      <iframe id="search-frame" title="Car Search Hub — saved searches and vehicles" src="/car-search-app/" allow="clipboard-write" referrerpolicy="same-origin"></iframe>
+    </main>
+  </div>
+  <script src="app.js?v=14222" defer></script>
+</body>
+</html>

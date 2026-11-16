@@ -1,0 +1,197 @@
+# DriveHub v142.22
+
+## v142.22 Car Search tool integration
+
+- **Car Search** is now a first-class DriveHub tool beside MyGarage, Valuation and Road Finder, available at `/search/` from the main gateway (desktop/mobile).
+- Its existing Python service remains responsible for all scans, searches, saved cars, notes, account login and persistent storage. DriveHub runs a **fixed same-origin reverse proxy** under `/car-search-app/`; the Car Search tool is shown within the DriveHub tool shell. **No car data migration** is performed, and the existing Car Search service remains available independently.
+- The proxy isolates the Car Search session cookie to `/car-search-app/`, forwards only that cookie upstream, rewrites the Car Search API routes and leaves DriveHub's API namespace untouched. DriveHub's frame/content-security policy permits only this same-origin tool view.
+- Existing Railway service URL is the default; set `CAR_SEARCH_HUB_URL=https://YOUR-CAR-SEARCH-SERVICE` in DriveHub if you move the Car Search backend. DriveHub itself does **not** need Playwright or Python installed. The Car Search service must remain available for live functionality.
+- The standalone/offline launcher and Capacitor shell show the Car Search card; because scans require a server, that card opens the hosted DriveHub/Car Search tool when connected, rather than pretending searches are offline-capable.
+- Adds integration tests for routes, cookie handling, proxy isolation, cache policy, and upstream API behaviour. Existing tools remain unchanged.
+
+## v142.21 MyGarage mobile MOT history containment
+
+- Fixes the full MOT history screen widening beyond the phone viewport on narrow displays.
+- The intentionally wide mileage chart now scrolls within its own card rather than forcing the MOT history grid wider than the screen.
+- Adds shrink constraints to MOT history cards, result rows and headings, plus safe wrapping for long advisory/test metadata.
+- Adds a regression check for mobile MOT history containment.
+
+
+## v142.21 MyGarage Timeline today section
+
+- MyGarage Timeline now splits events into **Upcoming → Today → Past events**, so anything dated on the device's current day is no longer mixed into either side of the timeline.
+- The Today group uses the same local-day calculation as DriveHub due-date logic, avoiding UTC-midnight misclassification around local timezone boundaries.
+- Timeline CSV/PDF exports now label current-day entries as **Today** as well.
+- Adds a regression check covering the Today bucket, its ordering between Upcoming and Past, and its visual treatment.
+
+## v142.19 Android OTA foundation
+
+- Adds a **Capacitor 8 Android shell scaffold** under `android-shell/` so DriveHub remains one web codebase rather than becoming a separate Android rewrite.
+- Android ships a generated known-good local web build and can receive later HTML/CSS/JS/assets from DriveHub's own **self-hosted OTA endpoint** without a Play Store release. Native plugins, permissions and Android code still use normal Play releases.
+- Adds stable/beta OTA channels, semantic web-release versions, checksum metadata, optional Encryption V2 `session_key` support and a `minimumNativeVersionCode` compatibility gate.
+- The shared runtime routes API calls from the native-local bundle back to the hosted DriveHub backend and only acknowledges an OTA bundle after a successful page load/grace period, preserving updater rollback protection.
+- Native MyGarage deliberately skips browser service-worker/Web Push registration; the existing Browser and Email channels remain web features while a proper Android **App** notification channel can be added natively.
+- Adds `build:android-web`, `test:android` and `promote:android-ota` tooling plus regression coverage for update discovery, no-downgrade behaviour, CORS, native-version gating and update-path safety.
+- Hosted `/` now serves the lightweight gateway rather than transferring the ~1.6 MB standalone launcher on every fresh Home visit. The generated root `index.html` remains the self-contained offline/file launcher.
+- MyGarage's browser service-worker precache now includes the actual `app.bundle.js` plus shared runtime/chrome assets, closing the first-offline-reload gap found during the v142.18 review.
+
+The permanent Android package ID is still to be confirmed before the first Play Store release. The Gradle Android project itself is generated on the development machine with `cd android-shell && npm install && npm run android:add`.
+
+## v142.18 navigation & load hardening
+
+- Edit vehicle screens now reserve the fixed desktop navigation height plus 28px of breathing room, preventing the page title/back control from colliding with the DriveHub header.
+- Adds a release-gate navigation/load regression suite covering cold entry to Home, MyGarage, Valuation and Road Finder, trailing-slash redirects, same-origin asset availability, cache headers and hosted integration status.
+- Hosted Home cards now have real `/garage/`, `/valuation/` and `/roads/` hrefs before JavaScript runs, while the standalone launcher still intercepts them into embedded tools.
+- Home refreshes recent-tool continuity, car/saved-valuation/cache counts and live readiness after Back/Forward Cache restores, so browser Back no longer reveals stale gateway information.
+- Shared desktop navigation resynchronises after BFCache restores and orientation changes.
+- MyGarage shell, service worker, app bundle and registration URLs are now version-locked to v142.18; v142.16 still carried v142.14 cache keys.
+- Road Finder now has an explicit boot failure state if Leaflet fails to load, avoiding an otherwise blank page when the mapping library CDN is unavailable.
+- The release gate verifies the 900px wide-tablet breakpoint stays aligned between shared chrome and Road Finder JavaScript/CSS.
+
+
+## v142.16 stacked DriveHub home
+
+- The DriveHub main page now presents MyGarage, Valuation and Road Finder as **full-width stacked cards** rather than a two-column grid.
+- On wider screens each card uses a compact horizontal layout: tool icon, description, then live status/action. This uses the available width while making the three primary tools easier to scan.
+- Mobile keeps the familiar vertical card layout, so the change does not make narrow screens cramped.
+- The gateway canvas is slightly wider on desktop to give the stacked cards comfortable text measure and status space.
+
+## v142.15 hosted navigation + wider-tablet layout
+
+- The desktop DriveHub shell now starts at **900px** instead of 1025px, so landscape and wider tablets use the top navigation and desktop Road Finder workspace.
+- On a hosted DriveHub deployment, Home now opens **`/garage/`, `/valuation/` and `/roads/` directly**. The `srcdoc` iframe launcher is retained only for the true `file://` standalone build.
+- This removes the fragile hosted embedding path behind Road Finder occasionally opening blank until refresh and Valuation incorrectly claiming that the live DriveHub service was unavailable.
+- Standalone Road Finder also receives an explicit iframe-visible event and revalidates its panels and Leaflet/MapLibre map size when revealed.
+- Valuation now derives the live API URL from the actual DriveHub host origin, including a parent-origin fallback when embedded.
+
+## v142.14 genuine Web Push
+
+- Browser notifications are now real **Web Push**, not an on-open/catch-up check. DriveHub registers a service worker, creates a VAPID-backed `PushSubscription`, and syncs the same reminder schedule used by Email to the Cloudflare relay.
+- The Cloudflare cron can therefore deliver MOT, tax, insurance, service and custom reminders even when DriveHub is completely closed.
+- Browser and Email remain individually selectable beneath the global **Notifications** switch. The disabled **App — coming later** channel remains reserved for native Android delivery.
+- Each browser/device has its own push subscription and random relay token, so a user can enable notifications on several devices independently.
+- Turning the Browser channel off deletes that device from the relay and unsubscribes it from PushManager. Turning the global Notifications switch off keeps the subscription but sends an empty schedule.
+- The MyGarage service worker now handles `push` events and displays native notifications. Expired push endpoints are deactivated automatically by the Worker.
+- The root DriveHub launcher can broker PushManager subscription for embedded MyGarage, while direct `/garage/` use subscribes through the MyGarage service worker itself.
+- iPhone/iPad users are told to add DriveHub/MyGarage to the Home Screen before enabling Browser notifications.
+- `cloudflare/notification-relay/` now includes the Web Push dependency, D1 push tables, VAPID setup instructions and the shared Email + Push scheduler.
+
+### Cloudflare secrets added for Web Push
+
+```text
+VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY
+VAPID_SUBJECT
+```
+
+Existing `RELAY_SECRET`, `RESEND_API_KEY` and `EMAIL_FROM` settings continue to be used. The VAPID private key never reaches the browser.
+
+
+## v142.12 valuation environment fix
+
+- Fixed live Valuation being misclassified as local-file mode when the tool is embedded in DriveHub's `srcdoc` launcher.
+- Valuation now resolves the outer DriveHub page protocol, so an HTTPS-hosted launcher can call `/api/valuation` normally.
+- Local-file mode and a static hosted deployment with no live API now produce different, accurate recovery messages.
+- Valuation JS/CSS cache key bumped to `14212`.
+
+
+## v142.11 MyGarage canvas polish
+
+- MyGarage now uses a warm off-white application background (`#f6f4ef`) instead of the previous green-tinted canvas. Green remains reserved for DriveHub accents, actions and statuses.
+- The PWA background and MyGarage asset/service-worker cache keys are updated so the new canvas appears immediately in hosted installs.
+
+## v142.10 consolidation — trust and explanation
+
+- Valuation now explains **why** its confidence is High, Medium or Low using sample size, match quality, generation matching and any relaxed criteria.
+- Mileage normalisation is surfaced in valuation evidence, including the target mileage, comparable-market average and the inferred value effect per 10,000 miles when the model is reliable.
+- Saved valuation detail now shows the latest valuation-history checks rather than retaining history invisibly.
+- Valuations opened from MyGarage have a direct **Open in MyGarage** next action, including in the standalone launcher.
+- Road Finder route cards now include a compact **Why this route** explanation derived from rated-road coverage, route profile and the strongest included roads.
+- Valuation success/info feedback prefers the shared DriveHub status surface, continuing the v142 move away from tool-specific transient UI.
+- Cache/version keys are bumped to `14210` and the full standalone parity gate remains part of `npm run check`.
+
+
+### v142.8 MyGarage logo-path fix
+
+- Fixes MyGarage logos that were still rendered later by `app.bundle.js` as `icons/drivehub-192.png` inside the standalone launcher.
+- The standalone builder now rewrites **all** MyGarage DriveHub logo references inside both the initial HTML and bundled JavaScript to embedded data URIs.
+- Hosted `/garage/icons/drivehub-192.png` remains available and is smoke-tested as a normal PNG response.
+- Adds a standalone parity regression that fails if any literal `icons/drivehub-192.png` reference survives in the embedded MyGarage payload.
+- Bumps shared/tool/service-worker cache keys to v142.8 so a stale v142.7 shell cannot keep the broken reference alive.
+
+
+### v142.4 standalone MyGarage recovery
+
+- Wide-screen navigation is rendered as a dedicated `.drivehub-desktop-nav`.
+- Tool-owned `.bottom-nav` elements remain unchanged and are only hidden above 1024px.
+- Desktop nav controls proxy the original tool actions and mirror active/count state through a MutationObserver.
+- This removes the CSS collision that could corrupt MyGarage/Valuation/Road Finder layouts when shared and tool-specific nav rules targeted the same element.
+- The standalone launcher embeds the same isolated shared shell.
+
+## Consolidation release — continuity and recovery
+
+DriveHub v142.4 fixed a standalone-launcher regression that could terminate MyGarage's inline JavaScript inside the vehicle-share HTML template. That caused reminder/event template expressions such as `${editing?...}` to appear as visible page content. The static builder now inserts launcher helpers only before the final document `</body>`, and a parity test protects this boundary.
+
+### Desktop navigation now behaves like an application shell
+
+- The shared wide-screen DriveHub bar remains the navigation pattern above 1024px.
+- The **DriveHub + current tool** identity at the left is now an actual Home control rather than decorative branding.
+- Home is still available in the tool navigation itself, so the behaviour stays obvious and accessible.
+- Mobile and tablet retain the existing bottom navigation.
+
+### Shared recovery / empty-state pattern
+
+- Adds a reusable DriveHub state hierarchy (`.dh-state`) for quiet empty states, warnings and recoverable errors.
+- The pattern provides a consistent icon, title, explanation and primary/secondary actions without forcing the three tools to share their internal layouts.
+- Road Finder and Valuation now use the pattern for the places where recovery matters most.
+
+### Road Finder: errors are actionable
+
+- A failed road/route search no longer ends with only a transient status message.
+- Results now show a persistent recovery card with **Try again** and **Edit search** actions.
+- No-road and no-route states also take the user straight back to Search rather than leaving them at a dead end.
+- Restored processed-result caches are explicitly marked in the current search state and the desktop overview says **Cached**, making instant repeat searches understandable rather than mysterious.
+
+### Valuation: saved prices now become useful history
+
+- Refreshing a saved valuation preserves the previous market snapshot instead of discarding it.
+- Saved cards now show movement since the prior check, e.g. **↑ £450** or **↓ £300**, with the date of the comparison.
+- The opened saved valuation shows the same movement context beside the current market estimate.
+- Up to 12 previous refresh snapshots are retained on each saved valuation for future trend/history work.
+- Market failures now create a persistent recoverable error state with **Try again** and **Dismiss**, in addition to the existing brief toast.
+
+### Better cross-tool continuity
+
+- MyGarage car overviews now include a dedicated **Find a great road** handoff into Road Finder, alongside the existing MyGarage → Valuation handoff.
+- DriveHub remembers the most recently opened tool.
+- The Home screen exposes a compact **Continue in…** action so returning to DriveHub does not always mean starting again from the tool chooser.
+- The recent-tool behaviour works in hosted mode and through the self-contained launcher.
+
+### Existing v142 resilience remains in place
+
+- Shared online/offline feedback across all three tools.
+- One shared DriveHub activity/status surface for working, success, error and info feedback.
+- Bounded Road Finder routing/map-data requests and cached results.
+- Valuation request timeout.
+- Google Drive request and identity/configuration timeouts in MyGarage.
+- Current MyGarage service-worker cache versioning.
+
+### Standalone parity
+
+`npm run build:static` continues to rebuild the DriveHub gateway and all three embedded tools. The v142.3 navigation, recovery states, MyGarage → Road Finder handoff, saved-valuation movement and recent-tool continuity are therefore included in the single-file `index.html` as well as the hosted version.
+
+### Tests
+
+The release gate covers:
+
+- shared desktop navigation and clickable DriveHub identity;
+- common recovery-state styling;
+- recent-tool Home continuity;
+- MyGarage → Valuation and MyGarage → Road Finder handoffs;
+- Valuation refresh history, price movement and retry state;
+- Road Finder recoverable search failures and visible cache reuse;
+- all existing MyGarage, Valuation, Road Finder, routing, mobile/desktop UI and Road Score regression suites.
+
+### v142.9 Valuation hero layout fix
+- Removes the obsolete two-column header grid left behind after the Valuation back button was removed.
+- Gives the Valuation intro a normal desktop reading width so the title and description no longer wrap into a 44px column.

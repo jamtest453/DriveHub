@@ -1,0 +1,18 @@
+{
+  "stable": {
+    "version": "142.22.0",
+    "file": "",
+    "checksum": "",
+    "minimumNativeVersionCode": 1,
+    "enabled": false,
+    "sessionKey": ""
+  },
+  "beta": {
+    "version": "142.22.0",
+    "file": "",
+    "checksum": "",
+    "minimumNativeVersionCode": 1,
+    "enabled": false,
+    "sessionKey": ""
+  }
+}
