@@ -1,0 +1,179 @@
+/* DriveHub v142.10 shared chrome ------------------------------------------------
+   Shared wide-screen navigation, network feedback and lightweight activity
+   feedback. Tool-specific layouts remain independent beneath this layer. */
+:root{
+  --dh-nav-bg:var(--color-neutral-900,var(--dark,#14313a));
+  --dh-nav-fg:#a6bab7;
+  --dh-nav-active-bg:var(--color-neutral-100,var(--surface,#f7fbf9));
+  --dh-nav-active-fg:var(--color-neutral-900,var(--dark,#14313a));
+  --dh-nav-shadow:0 10px 30px rgba(20,49,58,.16);
+  --dh-top-nav-height:74px;
+}
+
+.drivehub-network-banner,
+.drivehub-activity{
+  position:fixed;
+  z-index:110;
+  max-width:min(560px,calc(100% - 28px));
+  border-radius:999px;
+  background:#14313a;
+  color:#f7fbf9;
+  box-shadow:var(--dh-nav-shadow);
+  font:700 12px/1.3 "Figtree",system-ui,sans-serif;
+  opacity:0;
+  pointer-events:none;
+  transform:translateY(-7px);
+  transition:opacity .18s ease,transform .18s ease;
+}
+.drivehub-network-banner[data-visible="true"],
+.drivehub-activity[data-visible="true"]{opacity:1;transform:translateY(0)}
+
+.drivehub-network-banner{
+  left:50%;
+  top:max(10px,env(safe-area-inset-top));
+  transform:translate(-50%,-7px);
+  padding:9px 14px;
+  text-align:center;
+}
+.drivehub-network-banner[data-visible="true"]{transform:translate(-50%,0)}
+
+.drivehub-activity{
+  right:14px;
+  top:calc(max(10px,env(safe-area-inset-top)) + 48px);
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:9px 13px 9px 10px;
+  min-height:38px;
+  transition:opacity .18s ease,transform .18s ease,background-color .18s ease,color .18s ease;
+}
+.drivehub-activity[data-state="working"]{background:#14313a;color:#f7fbf9}
+.drivehub-activity[data-state="success"]{background:#d9eee4;color:#16583f}
+.drivehub-activity[data-state="error"]{background:#f6dedb;color:#8d3028}
+.drivehub-activity[data-state="info"]{background:#edf3f2;color:#315a61}
+.drivehub-activity__spinner{
+  width:17px;height:17px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.28);
+  border-top-color:#fff;
+  animation:drivehubSpin .8s linear infinite;
+  flex:0 0 auto;
+}
+.drivehub-activity:not([data-state="working"]) .drivehub-activity__spinner{display:none}
+.drivehub-activity__status-icon{
+  display:none;
+  width:19px;height:19px;border-radius:50%;
+  align-items:center;justify-content:center;
+  flex:0 0 auto;
+  font:900 12px/1 "Figtree",system-ui,sans-serif;
+  background:currentColor;color:#fff;
+}
+.drivehub-activity[data-state="success"] .drivehub-activity__status-icon,
+.drivehub-activity[data-state="error"] .drivehub-activity__status-icon,
+.drivehub-activity[data-state="info"] .drivehub-activity__status-icon{display:inline-flex}
+.drivehub-activity[data-state="success"] .drivehub-activity__status-icon{background:#1f7754}
+.drivehub-activity[data-state="error"] .drivehub-activity__status-icon{background:#a63d32}
+.drivehub-activity[data-state="info"] .drivehub-activity__status-icon{background:#517174}
+@keyframes drivehubSpin{to{transform:rotate(360deg)}}
+
+
+
+/* Shared recovery / empty-state language. Tools can keep their own layout while
+   using the same hierarchy for empty, warning and failure states. */
+.dh-state{
+  --dh-state-accent:#1f7754;
+  --dh-state-soft:#e8f3ef;
+  display:grid;
+  justify-items:start;
+  gap:8px;
+  text-align:left;
+  border:1px solid rgba(20,49,58,.12);
+  border-radius:20px;
+  padding:18px;
+  background:var(--color-neutral-0,#fff);
+  color:var(--color-neutral-900,#14313a);
+}
+.dh-state--error{--dh-state-accent:#a63d32;--dh-state-soft:#fff0ed}
+.dh-state--warning{--dh-state-accent:#8a6413;--dh-state-soft:#fff6db}
+.dh-state--quiet{--dh-state-accent:#517174;--dh-state-soft:#edf3f2}
+.dh-state__icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:var(--dh-state-soft);color:var(--dh-state-accent)}
+.dh-state__icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.dh-state h2,.dh-state h3{margin:4px 0 0!important;color:inherit!important}
+.dh-state p{margin:0!important;max-width:64ch;color:var(--color-neutral-600,#627b7d)!important;line-height:1.5}
+.dh-state__actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:5px}
+.dh-state__action{min-height:40px;border:0;border-radius:999px;padding:0 15px;background:var(--dh-state-accent);color:#fff;font:800 12px/1 "Figtree",system-ui,sans-serif;cursor:pointer}
+.dh-state__action--secondary{background:var(--dh-state-soft);color:var(--dh-state-accent)}
+
+/* Desktop navigation is a separate shell. The tool-owned .bottom-nav is
+   never restyled into a desktop bar; it is simply hidden on wide screens. */
+.drivehub-desktop-nav{display:none}
+@media (min-width:900px){
+  .bottom-nav{display:none!important}
+  .drivehub-desktop-nav{
+    position:fixed;
+    inset:0 0 auto 0;
+    z-index:90;
+    height:var(--dh-top-nav-height);
+    padding:0 clamp(24px,4vw,64px);
+    border-bottom:1px solid rgba(255,255,255,.08);
+    background:var(--dh-nav-bg);
+    box-shadow:0 5px 22px rgba(20,49,58,.13);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:22px;
+    font-family:"Figtree",system-ui,sans-serif;
+  }
+  .drivehub-desktop-nav__brand{
+    display:flex;align-items:center;gap:12px;min-width:0;flex:0 0 auto;margin:0;
+    border:0;padding:0;background:transparent;color:#f7fbf9;text-align:left;cursor:pointer;
+  }
+  .drivehub-desktop-nav__mark{
+    width:40px;height:40px;border-radius:12px;display:grid;place-items:center;
+    background:transparent;border:0;color:#fff;overflow:hidden;flex:0 0 auto;
+  }
+  .drivehub-desktop-nav__mark svg{width:40px;height:40px;display:block}
+  .drivehub-desktop-nav__copy{display:grid;line-height:1.05;min-width:0}
+  .drivehub-desktop-nav__copy strong{font-size:15px;letter-spacing:.005em;color:#fff;white-space:nowrap}
+  .drivehub-desktop-nav__copy span{margin-top:4px;font-size:11.5px;font-weight:700;color:#b9cbc8;white-space:nowrap}
+  .drivehub-desktop-nav__brand:hover .drivehub-desktop-nav__mark{transform:translateY(-1px)}
+  .drivehub-desktop-nav__brand:focus-visible{outline:2px solid #fff;outline-offset:5px;border-radius:12px}
+  .drivehub-desktop-nav__actions{display:flex;align-items:center;gap:7px;min-width:0;flex:0 0 auto}
+  .drivehub-desktop-nav__item{
+    position:relative;height:44px;min-height:44px;display:flex;align-items:center;justify-content:center;gap:8px;
+    border:0;border-radius:14px;padding:0 17px;background:transparent;color:var(--dh-nav-fg);
+    font:800 12.5px/1 "Figtree",system-ui,sans-serif;cursor:pointer;white-space:nowrap;flex:0 0 auto;
+  }
+  .drivehub-desktop-nav__item svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .drivehub-desktop-nav__item .nav-label{display:inline!important;white-space:nowrap}
+  .drivehub-desktop-nav__item.gateway-home{width:46px;padding:0;margin-right:4px}
+  .drivehub-desktop-nav__item.gateway-home .nav-label{display:none!important}
+  .drivehub-desktop-nav__item.is-active{
+    background:var(--dh-nav-active-bg);color:var(--dh-nav-active-fg);
+    box-shadow:0 1px 0 rgba(255,255,255,.12),0 5px 16px rgba(9,35,42,.14);
+  }
+  .drivehub-desktop-nav__item:hover:not(.is-active){color:#fff;background:rgba(255,255,255,.07)}
+  .drivehub-desktop-nav__item:focus-visible{outline:2px solid #fff;outline-offset:3px}
+  .drivehub-desktop-nav__item .nav-count{position:absolute;top:2px;right:2px}
+
+  /* Reserve space for the independent desktop bar without touching the tools' own nav geometry. */
+  .shell{padding-top:104px!important;padding-bottom:44px!important}
+  .app-shell{padding-top:104px!important;padding-bottom:44px!important}
+
+  /* MyGarage edit screens deliberately zero the app-shell padding. Their own
+     header therefore has to reserve the desktop bar plus comfortable breathing
+     room, otherwise the back button/title sit underneath the fixed nav. */
+  body[data-view="edit"] .organic-edit-head{
+    padding-top:calc(var(--dh-top-nav-height) + 28px)!important;
+  }
+  .rf-hero{top:92px!important;max-height:calc(100dvh - 110px)!important}
+  .rf-sheet{bottom:18px!important}
+  .floating-add{bottom:26px!important}
+  .toast{bottom:26px!important}
+  .drivehub-network-banner{top:86px}
+  .drivehub-activity{top:86px;right:24px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .drivehub-network-banner,.drivehub-activity{transition:none}
+  .drivehub-activity__spinner{animation:none;border-top-color:rgba(255,255,255,.28)}
+}

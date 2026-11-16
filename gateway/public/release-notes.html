@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14313a">
+  <title>What's new · DriveHub</title>
+  <link rel="stylesheet" href="styles.css?v=14222">
+  <style>
+    .release-page{max-width:850px}
+    .release-back{display:inline-block;margin:0 0 30px;color:#245e69;font-size:14px;font-weight:800;text-decoration:none}
+    .release-page h1{font-size:clamp(35px,7vw,50px);line-height:1.08}
+    .release-page h2{font-family:var(--font-body);font-size:22px;margin:26px 0 13px}
+    .release-page p,.release-page li{font-size:15px;line-height:1.65;color:#48656c}
+    .release-card{border:1px solid var(--line);background:#f7fbf9;border-radius:22px;padding:clamp(20px,4vw,32px);margin:24px 0}
+    .release-card li+li{margin-top:9px}
+    .release-card code{font-size:.91em;background:#e5eeeb;border-radius:5px;padding:2px 5px}
+  </style>
+</head>
+<body>
+  <main class="hub release-page">
+    <a class="release-back" href="/">‹ DriveHub tools</a>
+    <p class="kicker">RELEASE HISTORY</p>
+    <h1>What's new</h1>
+    <article class="release-card">
+      <p class="kicker">v142.22 · 16 November 2026</p>
+      <h2>Car Search joins DriveHub</h2>
+      <p>DriveHub now brings together four tools. Car Search is available beside MyGarage, Valuation Tool and Road Finder, with its own tool page at <code>/search/</code>.</p>
+      <ul>
+        <li>Browse and manage your existing Car Search searches, merged results, saved cars and notes from within DriveHub.</li>
+        <li>Use the existing Car Search account and persistent data; the original car-searching service remains independent.</li>
+        <li>DriveHub's server safely forwards Car Search requests through a dedicated path, keeping its session and API separate from other tools.</li>
+        <li>The mobile and standalone DriveHub launchers also display Car Search and open its online service when selected.</li>
+        <li>All DriveHub checks and new Car Search integration tests pass.</li>
+      </ul>
+      <p><strong>Hosting note:</strong> Car Search's Python backend must remain running. DriveHub uses the existing Railway endpoint unless configured with <code>CAR_SEARCH_HUB_URL</code>. No saved data is copied or migrated.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.21</p>
+      <h2>MyGarage history and navigation improvements</h2>
+      <p>The previous release improved mobile MOT history containment and separated the Timeline into Upcoming, Today and Past events. All existing tools remain available.</p>
+    </article>
+  </main>
+</body>
+</html>
