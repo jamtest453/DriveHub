@@ -39,7 +39,7 @@ DRIVEHUB_OTA_CHANNEL=stable        # or beta
 DRIVEHUB_OTA_PUBLIC_KEY=<Capgo Encryption V2 public key>
 ```
 
-The default hosted origin is `https://drive-hub-production-6748.up.railway.app`.
+The default hosted origin is `https://drivehub-production-7aa4f6f5.up.railway.app`.
 
 ## Normal DriveHub development
 

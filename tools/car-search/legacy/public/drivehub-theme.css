@@ -145,3 +145,14 @@ h1 { font-size: clamp(33px,3.5vw,48px); line-height: 1.05; }
   .nav-item.selected { background: #dceee4; }
 }
 @media (prefers-reduced-motion: reduce) { .search-overview-card { transition: none; } }
+
+/* Result-card location opens a region-level Leaflet map. */
+.car-location-link {display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:2px 4px;border:0;border-radius:7px;background:transparent;color:var(--dh-dark,#14313a);font:inherit;font-weight:750;cursor:pointer;text-align:left}
+.car-location-link:hover,.car-location-link:focus-visible{background:#dcece7;color:#165c49;text-decoration:underline}
+.car-location-link .location-pin{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:#2f9166}
+.location-modal{width:min(780px,calc(100vw - 22px));max-width:780px;padding:0 0 16px;max-height:min(92dvh,850px);overflow:auto;border-radius:22px}
+.location-modal .modal-head{padding:17px 23px 11px}
+.location-modal .helper{padding:0 23px;margin:4px 0 12px;line-height:1.5}
+.location-mini-map{height:clamp(300px,53dvh,520px);margin:0 17px 10px;border:1px solid rgba(20,49,58,.14);border-radius:15px;overflow:hidden;background:#e5eeeb}
+.location-modal .location-map-disclaimer{font-size:12px;color:#587078;margin-bottom:0}
+@media(max-width:650px){.location-mini-map{margin:0 10px 10px;height:52dvh;min-height:260px}.location-modal .modal-head{padding:13px 15px}.location-modal .helper{padding:0 15px}}

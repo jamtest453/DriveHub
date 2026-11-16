@@ -1,4 +1,12 @@
-# DriveHub v142.25
+# DriveHub v142.26
+
+# v142.26 — Car photo colours, location maps and one DriveHub header
+
+- Detect likely exterior paint colour from the listing image using deterministic Pillow HSV image sampling alongside existing photo fingerprints; **no AI or external recognition API**. A conservative confidence threshold rejects ambiguous images. Manual, explicit advert and title colours take precedence; photo-derived colour is labelled as an estimate.
+- Listing cards now show a clickable green map pin next to the advertised location. The regional map modal uses the existing secure location resolver and Leaflet maps, zoomed out to show surrounding towns; never claims to show the exact car address.
+- A single light DriveHub header is rendered from the shared chrome code on Home, MyGarage, Valuation, Road Finder and Car Search, including mobile layouts. The DriveHub icon is a Home control that returns to the main gateway.
+- Photo-colour estimates are stored in the same persistent listing records and can be backfilled for existing photo hashes without clearing user edits or downloading untrusted photo hosts.
+- Tests: 212 Car Search Python tests plus the full DriveHub check suite. Existing data volumes, scanner drivers and Railway variables are unchanged.
 
 ## v142.25 Car Search fullscreen + unified DriveHub design
 

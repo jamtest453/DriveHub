@@ -134,7 +134,7 @@ def test_displayed_result_colour_filter_uses_provenance():
     dashboard=(root/"public/dashboard.js").read_text(encoding="utf-8")
     html=(root/"public/dashboard.html").read_text(encoding="utf-8")
     assert "function exteriorColour(car)" in dashboard
-    assert "['explicit','title','manual'].includes(car.colourSource)" in dashboard
+    assert "['explicit','title','manual','photo'].includes(car.colourSource)" in dashboard
     assert "selected === 'unknown'" in dashboard
     assert "function groupMatchesColour(group)" in dashboard
     assert "colours.length === 0" in dashboard
