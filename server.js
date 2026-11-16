@@ -7,12 +7,12 @@ import {handleMyGarageApi,googleConfig,myGarageStatus} from './tools/my-garage/s
 import {handleValuationApi,valuationStatus} from './tools/valuation/server/api.js';
 import {handleRoadFinderApi,roadFinderStatus} from './tools/road-finder/server/api.js';
 import {handleNotificationRelay,notificationRelayStatus} from './tools/my-garage/server/notifications.js';
-import {handleCarSearchProxy,carSearchIntegrationStatus} from './tools/car-search/server/proxy.js';
+import {handleCarSearchApp,carSearchIntegrationStatus} from './tools/car-search/server/native.js';
 
 const ROOT=fileURLToPath(new URL('.',import.meta.url));
 function loadLocalEnv(){try{const raw=readFileSync(join(ROOT,'.env'),'utf8');for(const line of raw.split(/\r?\n/)){const trimmed=line.trim();if(!trimmed||trimmed.startsWith('#'))continue;const eq=trimmed.indexOf('=');if(eq<1)continue;const key=trimmed.slice(0,eq).trim();let value=trimmed.slice(eq+1).trim();if((value.startsWith('"')&&value.endsWith('"'))||(value.startsWith("'")&&value.endsWith("'")))value=value.slice(1,-1);if(process.env[key]===undefined)process.env[key]=value}}catch{}}
 loadLocalEnv();
-const DRIVEHUB_VERSION='142.22';
+const DRIVEHUB_VERSION='142.23';
 const PORT=Number(String(process.env.PORT||8080).trim()||8080);
 const rateBuckets=new Map();let rateSweepAt=0;
 function json(res,status,data,headers={}){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers});res.end(JSON.stringify(data))}
@@ -84,7 +84,7 @@ async function handleAppUpdate(req,res,requestUrl){
 async function handler(req,res){applySecurityHeaders(req,res);try{const requestUrl=new URL(req.url,`http://${req.headers.host||'localhost'}`),pathname=requestUrl.pathname;
   if((pathname==='/'||pathname==='/index.html')&&await serveRootIndex(req,res))return;
   if(pathname==='/garage'||pathname==='/valuation'||pathname==='/roads'||pathname==='/search'){res.writeHead(308,{location:`${pathname}/`,'cache-control':'no-store'});return res.end()}
-  if(pathname.startsWith('/car-search-app')){if(await handleCarSearchProxy(req,res,requestUrl))return}
+  if(pathname.startsWith('/car-search-app')){if(await handleCarSearchApp(req,res,requestUrl))return}
   if(pathname==='/api/vehicle'){if(!enforceRateLimits(req,res,'vehicle',{shortMax:30,shortMs:600000,dailyMax:120}))return;return handleMyGarageApi(req,res,pathname)}
   if(pathname==='/api/valuation'){if(!enforceRateLimits(req,res,'valuation',{shortMax:10,shortMs:600000,dailyMax:50}))return;return handleValuationApi(req,res,pathname,requestUrl)}
   if(pathname==='/api/ebay/account-deletion')return handleValuationApi(req,res,pathname,requestUrl);

@@ -1,3 +1,13 @@
+# v142.23 — Native Car Search inside DriveHub
+
+## v142.23 Native Car Search (single DriveHub service)
+
+- **Car Search is now fully within this repository and Railway DriveHub service.** The `/car-search-app/` route serves its own frontend and API; it no longer forwards to another Railway domain. No separate car-finder repository or deployment is required.
+- Persistent car data is stored at `/data/car-search-hub.json` using the existing DriveHub Railway volume. Set `CAR_SEARCH_PASSWORD` in Railway to secure saved cars and private notes (without it, the app has no login and its data is publicly accessible). The app reports that warning.
+- Core tools: saved searches and generated provider links; refresh with source-specific warning reporting; new and changed listings; cross-site duplicate grouping, manual merge/separate; saved cars, private notes, manual listing URL entry and edit protection; search URL import; required AND/OR keywords, exclusions and preferred terms; colours, location/distance where the town is known, results sorting and filtering; export/import backups and share controls.
+- **Important difference from v4.12:** Original Python/Playwright scanning and Facebook login were not included in the previous DriveHub ZIP. This rebuilt native Node service uses server-side HTML extraction instead. Many car websites restrict automated HTML access; these sources explicitly report restrictions and retain previously collected results rather than claiming scans succeeded. It does not yet reproduce the original photo fingerprinting or full geocoded map.
+- Tests cover new native backend endpoints, authentication, persistence, keyword logic and parser behaviour.
+
 # DriveHub release notes
 
 ## v142.22 — Car Search integration (16 November 2026)
