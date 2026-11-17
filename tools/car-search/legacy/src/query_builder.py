@@ -5,7 +5,7 @@ remain visible and are marked unverified rather than silently excluded.
 """
 import re
 import os
-from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
+from urllib.parse import urlencode
 from .colour import COLOUR_CHOICES, listing_exterior_colour
 from .vehicle_names import resolve_vehicle_query
 
@@ -132,12 +132,6 @@ def generate_links(filters, sources=SOURCES, search_name=None):
             if filters["priceMax"] is not None: params["_udhi"] = filters["priceMax"]
             url = "https://www.ebay.co.uk/sch/i.html?" + urlencode(params)
             note = "eBay uses its Browse API. Vehicle details beyond keywords and price are locally checked when available."
-            # Browse supports category-specific item aspect filtering. Only
-            # restrict exterior paint at the provider when the owner opts
-            # out of unknown-colour cars; otherwise that provider filter would
-            # silently discard the unknowns they expressly asked to include.
-            if filters["colours"] and not filters["includeUnknownColours"]:
-                note += " Confirmed paint colours use the Browse API exterior-colour facet when available."
 
         elif site == "facebook":
             params = {"query": combined}
@@ -199,27 +193,16 @@ def generate_links(filters, sources=SOURCES, search_name=None):
             else:
                 url = "https://www.pistonheads.com/buy/search?" + urlencode({"keywords": combined})
                 note = "Unrecognised make: PistonHeads keyword search. Vehicle filters checked locally."
-            # PistonHeads supports a repeated 'price' range on public search
-            # URLs. Other filters use opaque provider-specific facet codes;
-            # don't invent codes or accidentally suppress valid adverts.
-            if filters["priceMax"] is not None:
-                parsed = urlsplit(url)
-                query = parse_qsl(parsed.query, keep_blank_values=True)
-                query.extend([("price", int(filters["priceMin"] or 0)),
-                              ("price", int(filters["priceMax"]))])
-                url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path,
-                                  urlencode(query), parsed.fragment))
-                note += " Price range is sent to PistonHeads; other known vehicle details are checked locally."
         link = {"site": site, "url": url, "sourceNote": note}
-        # The eBay API reads this metadata directly; it is not a fake
-        # website query parameter and thus does not mislead clicked URLs.
-        if site == "ebay" and filters["colours"] and not filters["includeUnknownColours"]:
-            link["apiColourFilter"] = [colour.title() for colour in filters["colours"]
-                                        if colour != "other"]
-        if filters["colours"] and filters["includeUnknownColours"]:
-            link["sourceNote"] += (" Unconfirmed exterior colours are included by choice; "
-                                   "a strict provider paint filter would remove them. "
-                                   "Confirmed mismatches are hidden locally.")
+        if filters["colours"]:
+            if filters["includeUnknownColours"]:
+                link["sourceNote"] += (" Selected exterior colours plus unknowns: "
+                                       "a provider colour filter cannot be used if it "
+                                       "would omit unknown-colour cars. Confirmed mismatches "
+                                       "are hidden by DriveHub.")
+            elif site != "autotrader":
+                link["sourceNote"] += (" Provider has no verified compatible exterior "
+                                       "colour facet; DriveHub checks the advert colour.")
         links.append(link)
     return links
 
