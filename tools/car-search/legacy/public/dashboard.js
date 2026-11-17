@@ -493,6 +493,24 @@ function baseGroupsForView(lists) {
     derivedResultGroups.set(view,grouped(lists));
   return derivedResultGroups.get(view);
 }
+function priceMileageComparisonGroups(lists) {
+  // Display filters (including selected colour, source and keyword) must
+  // not shrink the valuation sample or make badges flicker into "Not rated".
+  // Compare against the original collected adverts while only rendering
+  // the searched-for colours in the results themselves.
+  resetDerivedCache();
+  const search=getSearch();
+  const key='price-mileage-peers:'+view;
+  if (!derivedResultGroups.has(key)) {
+    const ids=search ? availableIds(search) :
+      view==='saved' ? lists.map(car=>car.id) :
+      [...new Set(state.searches.flatMap(availableIds))];
+    const observations=ids.map(id=>state.listings[id]).filter(car=>
+      car && !autotraderWriteoff(car));
+    derivedResultGroups.set(key,grouped(observations));
+  }
+  return derivedResultGroups.get(key);
+}
 function liveStats() {
   resetDerivedCache();
   if (derivedStats.has(view)) return derivedStats.get(view);
@@ -898,7 +916,7 @@ function priceMileageObservation(group) {
   const year=Number(combined?.year);
   const identity=vehicleIdentity(combined?.title);
   const family=identity ? identity.make+'/'+identity.model+'/'+priceMileageVariant(combined.title) : null;
-  return {id:group[0]?.id,price,mileage,year,family,
+  return {id:group[0]?.id,ids:group.map(car=>car.id),price,mileage,year,family,
     transmission:effectiveTransmission(combined)};
 }
 function priceMileageMedian(numbers) {
@@ -991,11 +1009,15 @@ function priceMileageRatings(groups) {
       (adjustment.estimated ? 'Approximate mileage allowance (3% of median asking price per 10,000 miles); few reliable same-year observations. ' :
         'Mileage rate estimated from same-year comparable adverts. ')+
       'Asking prices only; not a verified market valuation.';
-    rated.set(row.id,{tier,label:labels[tier],
+    const detail={tier,label:labels[tier],
       score:relativeDifference===null?null:-relativeDifference,
       relativeDifference,adjustedCost:adjustedPrice,
       price:row.price,mileage:row.mileage,peers:peers.length,
-      depreciationPer10000:rate===null?null:rate*10000,reason});
+      depreciationPer10000:rate===null?null:rate*10000,reason};
+    // Multi-source cards may show a different preferred advert depending
+    // on the active site filter. Give every source of the same car its
+    // shared valuation.
+    for(const id of row.ids) rated.set(id,detail);
   }
   return rated;
 }
@@ -1047,7 +1069,7 @@ function renderResults() {
     (g.some(matchesResultFilters) || matchesResultFilters(combinedCarDetails(g))) &&
     groupMatchesColour(g) && groupMatchesDistance(g));
   const sort = $('sortFilter').value;
-  const valueRatings=priceMileageRatings(groups);
+  const valueRatings=priceMileageRatings(priceMileageComparisonGroups(lists));
   groups.sort((a,b) => {
     if (sort==='priceMileage') {
       const value=comparePriceMileageGroups(a,b,valueRatings);
@@ -1366,6 +1388,9 @@ function renderCard(g, statuses, inHiddenSection=false, valueRating=null) {
     mileage && !inTitle(mileage) ? `<span>${esc(mileage)}</span>` : '',
     locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel)}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
     exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}</span>` : '',
+    !exteriorColour(car) && getSearch()?.filters?.colours?.length &&
+      getSearch()?.filters?.includeUnknownColours ?
+      '<span title="This advert has no reliable exterior paint colour; your search includes unconfirmed colours.">Colour unconfirmed</span>' : '',
     car.bhp && !inTitle(`${car.bhp} bhp`) ? `<span>${esc(car.bhp)} bhp</span>` : '',
     transmission && !inTitle(transmission) && !inTitle('DCT') && !inTitle('DSG') && !inTitle('PDK') ? `<span>${transmission==='automatic'?'Automatic':'Manual'}</span>` : ''
   ].filter(Boolean).join('');
