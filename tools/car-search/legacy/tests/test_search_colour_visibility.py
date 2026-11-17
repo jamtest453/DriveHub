@@ -80,11 +80,12 @@ vm.runInNewContext(choices+'\n'+colour+'\n'+search+'\n'+cases,{console,Map,Set})
     assert "Saved search colour snapshot checks passed" in result.stdout
 
 
-def test_colour_unknown_option_is_unambiguously_opt_in():
+def test_colour_unknown_option_defaults_on_and_remains_editable():
     root=Path(__file__).resolve().parents[1]
     html=(root/"public/dashboard.html").read_text()
     js=(root/"public/dashboard.js").read_text()
     assert "Also include cars whose exterior colour is unknown" in html
     assert "includeUnknownColours:$('carStrictColour').checked" in js
-    assert "found?.filters?.includeUnknownColours === true" in js
+    assert 'id="carStrictColour" checked' in html
+    assert "found?.filters?.includeUnknownColours ?? true" in js
     assert "function matchingSearchIds(search)" in js
