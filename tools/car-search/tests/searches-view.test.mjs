@@ -69,6 +69,10 @@ assert.doesNotMatch(searchesHtml,/is-refreshing/);
 assert.match(searchesHtml,/↻ Refresh now/);
 
 assert.match(code,/data-action="edit-car" data-id=/,'Edit details available directly on result cards');
+assert.match(code,/function baseGroupsForView\(/,'result grouping is memoised across UI filters');
+assert.match(code,/if \(nav.innerHTML !== markup\)/,'shared navigation updated only when content changes');
+assert.match(code,/else if \(wasBusy !== scanBusy\) render\(\);/,'polling avoids rebuilding every page while scanning');
+assert.match(code,/scanSearchIds=scanBusy \?/,'refresh target updates from server status');
 assert.match(code,/if \(!manualEditId\) \{/,'Editing a tracked advert preserves the current page');
 assert.doesNotMatch(code,/Select a saved car to edit/);
 assert.doesNotMatch(code,/car\.colourSource === 'photo'/);
@@ -80,7 +84,7 @@ vm.runInNewContext(section('function renderNav()','function renderSources(')+
   '\nrenderNav()',{
     state,view:'search:s1', $:()=>({
       set innerHTML(value){navHtml=value}
-    }),liveStats:()=>({savedCount:0})
+    }),savedCarCount:()=>0
   });
 assert.match(navHtml,/data-view="searches"/);
 assert.match(navHtml,/data-view="overview"/);
