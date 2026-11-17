@@ -53,7 +53,62 @@
     <a class="release-back" href="index.html">‹ DriveHub tools</a>
     <p class="kicker">RELEASE HISTORY</p>
     <h1>What's new</h1>
-        <article class="release-card">
+    <article class="release-card">
+      <p class="kicker">v142.36 · 17 November 2026</p>
+      <h2>Smarter location matching and visible map failures</h2>
+      <p>Clean town labels stay on Car Search cards, but map lookups now preserve the full advertised postcode, county and mileage clue. Full postcodes take priority; the town is tried when a postcode is invalid. Confident spelling variants can also match without guessing among ambiguous UK locations.</p>
+      <p>The unmapped list explains each failure and provides per-car and retry-all actions, while individual location dialogs include a retry control. Explicit retries bypass stale negative geocoding results.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.35 · 17 November 2026</p>
+      <h2>Location map reliability, body styles and merged-car mileage</h2>
+      <p>Adverts now display place names rather than postcode fragments or distance annotations. Map lookups are normalised and map views recover from blocked mapping-library resources and repaint pins when reopened.</p>
+      <p>Added body-type selection to saved searches and result filtering: Coupe, Convertible/Roadster, Saloon, Hatchback, Estate, SUV/4x4, MPV, Pick-up, Van and Other. Cars without a known body type are always included. Price/mileage ratings can use a valid individual advert mileage even when merged sources disagree.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.34 · 17 November 2026</p>
+      <h2>More accurate source filters, updated adverts and broader value comparisons</h2>
+      <p>Searches keep the selected exterior colours <strong>plus unknown by default</strong>. Auto Trader is filtered at source only for confirmed-colour-only searches. For provider queries that cannot include missing colours, DriveHub checks source evidence locally and excludes only verified mismatches.</p>
+      <p>Added <strong>Most recently updated</strong> sorting across newly discovered adverts and actual price changes. Mileage-adjusted ratings use all collected model comparables instead of only displayed results, with a clearly disclosed fallback estimate for small samples.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.33 · 17 November 2026</p>
+      <h2>Mileage-adjusted asking prices with six clearer value labels</h2>
+      <p>Car Search now estimates a typical change in asking price per 10,000 miles from similar adverts, then compares each car at a common mileage. The old arbitrary 60% price / 40% mileage scoring is gone.</p>
+      <p>Cards now use <strong>Amazing!</strong>, <strong>Great</strong>, <strong>Good</strong>, <strong>Average</strong>, <strong>Poor</strong> or <strong>Terrible</strong>, with <strong>Not rated</strong> when mileage or comparables are insufficient. Best price vs mileage sorting uses the same adjusted-price differences. Ratings are relative to collected asking prices, not third-party valuations.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.32 · 17 November 2026</p>
+      <h2>Price-to-mileage badges and best-value sorting</h2>
+      <p>Car Search listing cards now show Great price, Good price, Fair price, High price, Poor price or Not rated, based on relative asking prices and mileage among comparable current listings. Lower prices and lower mileage improve the rating; comparisons are scoped to the same model/trim and nearby model years.</p>
+      <p>Added <strong>Best price vs mileage</strong> to result sorting, using the same scoring. A qualitative badge requires at least three comparable cars with reliable details; results with limited data remain sortable but are not presented as independently verified bargains.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.31 · 17 November 2026</p>
+      <h2>Clearer refresh status, better car locations and right-aligned tablet navigation</h2>
+      <p>Removed the redundant progress label beside each search; the Refresh now button still switches to Refreshing while its scan is active.</p>
+      <p>Location map lookups now use clean advertised town/postcode information without the “multiple locations” conflict label or provider mileage hints. On tablets, the shared DriveHub navigation controls sit against the right edge rather than drifting left.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.30 · 17 November 2026</p>
+      <h2>Reliable refreshes, faster pages and editable cars</h2>
+      <p>Removed unreliable photo-colour estimates from results, filters and duplicate decisions. Colours from advert information and manual edits are still supported; image fingerprints remain in use for matching duplicate photos.</p>
+      <p>Every result can now be edited without saving it to the shortlist. Searches show a dedicated Refreshing indicator and current website while scanning; source timeouts and safe browser cleanup prevent indefinite busy states.</p>
+      <p>Car Search now caches stable grouping, reduces redundant header/page renders and stops reloading the whole dashboard for every photo fingerprint, improving navigation responsiveness.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.29 · 17 November 2026</p>
+      <h2>Manage searches in one place, with distances beside locations</h2>
+      <p>Car Search's header now offers Overview, Searches and Saved cars instead of a tab for every saved search. The new Searches page shows each search's last check, deduplicated cars found and recent updates, with one-click Refresh now and Open results actions.</p>
+      <p>Car listings now place distance directly after the town in brackets, such as Hayes (157 miles), rather than in a separate specification. Distance is an approximate straight-line figure from High Lane, Stockport, loaded as location information becomes available.</p>
+    </article>
+    <article class="release-card">
+      <p class="kicker">v142.28 · 17 November 2026</p>
+      <h2>Less clutter, larger car photos and one-line navigation</h2>
+      <p>Car Search now folds its source links into a collapsed panel. Result cards show more of the car photo, suppress repeated title and provider details, and keep their existing shortlist, notes, map and duplicate-management actions.</p>
+      <p>Every tool's navigation now sits alongside the DriveHub title in a single shared header, with one consistent Home shortcut. New searches include unconfirmed colours by default, and non-AI image colour estimates need stronger agreement and at least 86% confidence. Existing preferences and saved listings remain intact.</p>
+    </article>
+    <article class="release-card">
       <p class="kicker">v142.27 · 17 November 2026</p>
       <h2>One tool-specific header and smarter make/model searches</h2>
       <p>Car Search's saved searches, shortlist, new search, Facebook and settings options now live in DriveHub's shared header. On smaller screens, the saved searches are available from a compact selector. Other tools also display their own navigation in the header, and the DriveHub icon returns Home.</p>

@@ -124,6 +124,7 @@ const combinedCarDetails=g=>g[0];
 const milesForGroup=g=>g[0].miles;
 const renderCard=g=>g[0].id+',';
 const renderHiddenResults=()=>{};
+const homeShortName=()=>'High Lane',hiddenReasons=()=>'';
 const state={searches:[{id:'s1'}]};
 const resultsLayout='list',view='overview',scanBusy=false,mergeFrom=null;
 const distanceLookupBusy=false;

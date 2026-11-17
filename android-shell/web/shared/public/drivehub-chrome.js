@@ -11,17 +11,20 @@
       if(window.parent!==window)return;
       if(!document.querySelector('link[data-drivehub-header-style]')){
         const style=document.createElement('link');
-        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14226';
+        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14236';
         style.dataset.drivehubHeaderStyle='true';document.head.appendChild(style);
       }
     }
-    if(document.documentElement.dataset.drivehubChrome==='14226')return;
-    document.documentElement.dataset.drivehubChrome='14226';
+    if(document.documentElement.dataset.drivehubChrome==='14236')return;
+    document.documentElement.dataset.drivehubChrome='14236';
 
     let sourceNav=null;
     let sourceObserver=null;
     let desktopNav=null;
     let bodyObserver=null;
+    let searchNavSource=null, searchDoc=null, searchObserver=null, facebookObserver=null;
+    let searchFrame=null;
+
 
     const toolFromLabel=label=>{
       const lower=String(label||'').toLowerCase();
@@ -52,7 +55,7 @@
     };
     const syncDesktopNav=()=>{
       if(!sourceNav||!desktopNav)return;
-      const originals=[...sourceNav.querySelectorAll('.nav-btn')];
+      const originals=[...sourceNav.querySelectorAll('.nav-btn:not(.gateway-home)')];
       const proxies=[...desktopNav.querySelectorAll('.drivehub-desktop-nav__item')];
       if(originals.length!==proxies.length){buildDesktopNav(sourceNav);return}
       originals.forEach((original,index)=>{
@@ -83,7 +86,7 @@
       if(desktopNav)return desktopNav;
       const tool=routeTool();
       const context={
-        '':['YOUR CAR TOOLS','DriveHub'],
+        '':['YOUR CAR TOOLS','All tools'],
         garage:['OWNERSHIP','MyGarage'],
         valuation:['MARKET VALUE','Valuation Tool'],
         roads:['GO DRIVE','Road Finder'],
@@ -114,16 +117,123 @@
           item.className='drivehub-desktop-nav__item';item.textContent=name;item.href=path;
           actions.appendChild(item);
         }
-      }else if(tool==='search'){
-        const newTab=document.createElement('a');
-        newTab.href='/car-search-app/';newTab.target='_blank';newTab.rel='noopener noreferrer';
-        newTab.className='drivehub-desktop-nav__item';newTab.textContent='Open full screen ↗';
-        actions.appendChild(newTab);
       }
       shell.appendChild(actions);
       document.body.appendChild(shell);
       desktopNav=shell;
       return shell;
+    };
+
+    // Car Search owns the search data and click handlers. Header controls are
+    // mirrors: clicking a header tab dispatches to the live original element.
+    // This also works through the same-origin /search/ iframe without moving
+    // its DOM nodes out of the Python application's document.
+    const syncSearchHeader=()=>{
+      if(!searchNavSource?.isConnected||!searchDoc)return;
+      const actions=ensureGlobalHeader().querySelector('.drivehub-desktop-nav__actions');
+      const previous=document.activeElement;
+      const focusedView=previous?.dataset?.searchView;
+      const focusedAction=previous?.dataset?.searchAction;
+      actions.replaceChildren();
+      const tabs=document.createElement('nav');
+      tabs.className='drivehub-search-tabs';
+      tabs.setAttribute('aria-label','Car Search sections');
+      const originals=[...searchNavSource.querySelectorAll('button[data-action="view"]')];
+      const active=originals.find(b=>b.classList.contains('selected'))?.dataset.view || 'overview';
+      for(const original of originals){
+        const tab=document.createElement('button');
+        tab.type='button';
+        tab.className='drivehub-desktop-nav__item drivehub-search-tab';
+        tab.dataset.searchView=original.dataset.view;
+        const caption=original.querySelector('.nav-text')?.textContent?.trim() || original.textContent.trim();
+        const count=original.querySelector('.nav-new,.nav-number')?.textContent?.trim();
+        tab.textContent=caption;
+        tab.title=count ? caption+' · '+count+' cars/updates' : caption;
+        if(original.dataset.view===active){
+          tab.classList.add('is-active');
+          tab.setAttribute('aria-current','page');
+        }
+        tab.addEventListener('click',()=>{
+          [...searchNavSource.querySelectorAll('button[data-action="view"]')]
+            .find(b=>b.dataset.view===tab.dataset.searchView)?.click();
+        });
+        tabs.appendChild(tab);
+      }
+      actions.appendChild(tabs);
+
+      // A compact selector keeps all saved searches available on small screens
+      // without expanding the global header to multiple lines.
+      const selector=document.createElement('select');
+      selector.className='drivehub-search-select';
+      selector.setAttribute('aria-label','Choose Car Search section');
+      for(const original of originals){
+        const option=document.createElement('option');
+        option.value=original.dataset.view;
+        option.textContent=original.querySelector('.nav-text')?.textContent?.trim() || original.textContent.trim();
+        selector.appendChild(option);
+      }
+      selector.value=active;
+      selector.addEventListener('change',()=>{
+        [...searchNavSource.querySelectorAll('button[data-action="view"]')]
+          .find(b=>b.dataset.view===selector.value)?.click();
+      });
+      actions.appendChild(selector);
+
+      const buttons=document.createElement('div');
+      buttons.className='drivehub-search-actions';
+      for(const [id,label,short] of [
+        ['facebookLoginTop','Facebook','Facebook'],
+        ['settingsTop','Settings','Settings'],
+        ['newSearchTop','+ New search','+ New']
+      ]){
+        const original=searchDoc.getElementById(id);
+        if(!original)continue;
+        const button=document.createElement('button');
+        button.type='button';
+        button.className='drivehub-desktop-nav__item drivehub-search-action';
+        if(id==='newSearchTop')button.classList.add('drivehub-search-primary');
+        if(id==='facebookLoginTop'&&original.classList.contains('fb-connected'))
+          button.classList.add('drivehub-search-connected');
+        button.dataset.searchAction=id;
+        button.setAttribute('aria-label',original.getAttribute('aria-label')||label);
+        button.title=original.title||label;
+        button.textContent=label;
+        if(id==='facebookLoginTop')button.textContent=original.classList.contains('fb-connected')?'✓ Facebook':short;
+        button.disabled=original.disabled;
+        button.addEventListener('click',()=>searchDoc.getElementById(id)?.click());
+        buttons.appendChild(button);
+      }
+      actions.appendChild(buttons);
+      // Restore keyboard focus when the Python dashboard re-renders its nav.
+      const follow=(focusedView&&actions.querySelectorAll('[data-search-view]'))
+        ?[...actions.querySelectorAll('[data-search-view]')].find(x=>x.dataset.searchView===focusedView):null;
+      const focusTarget=follow||(focusedAction?[...actions.querySelectorAll('[data-search-action]')]
+        .find(x=>x.dataset.searchAction===focusedAction):null);
+      if(focusTarget)focusTarget.focus({preventScroll:true});
+    };
+    const findSearchNav=()=>{
+      const tool=routeTool();
+      if(tool!=='search')return;
+      const frame=document.getElementById('search-frame');
+      if(frame&&frame!==searchFrame){
+        searchFrame=frame;
+        frame.addEventListener('load',findSearchNav);
+      }
+      const doc=frame?.contentDocument || (location.pathname.startsWith('/car-search-app/')?document:null);
+      const nav=doc?.getElementById('searchNav');
+      if(!nav || (nav===searchNavSource&&doc===searchDoc))return;
+      searchObserver?.disconnect();facebookObserver?.disconnect();
+      searchNavSource=nav;searchDoc=doc;
+      searchObserver=new MutationObserver(syncSearchHeader);
+      searchObserver.observe(nav,{childList:true,subtree:true,attributes:true,
+        attributeFilter:['class','aria-current','aria-pressed']});
+      const facebook=doc.getElementById('facebookLoginTop');
+      if(facebook){
+        facebookObserver=new MutationObserver(syncSearchHeader);
+        facebookObserver.observe(facebook,{childList:true,subtree:true,attributes:true,
+          attributeFilter:['class','title','aria-label','disabled']});
+      }
+      syncSearchHeader();
     };
     const buildDesktopNav=nav=>{
       if(!nav||nav.closest('.drivehub-desktop-nav'))return;
@@ -135,7 +245,7 @@
       const label=String(nav.getAttribute('aria-label')||'DriveHub').replace(/\s+(?:sections|navigation)$/i,'').trim()||'DriveHub';
       const tool=toolFromLabel(label);
       recordRecent(tool,displayTool(tool));
-      [...nav.querySelectorAll('.nav-btn')].forEach(original=>{
+      [...nav.querySelectorAll('.nav-btn:not(.gateway-home)')].forEach(original=>{
         const proxy=document.createElement('button');
         proxy.type='button';
         proxy.className='drivehub-desktop-nav__item';
@@ -151,6 +261,7 @@
       syncDesktopNav();
     };
     const findSourceNav=()=>{
+      if(routeTool()==='search'){findSearchNav();return}
       const nav=document.querySelector('body > .bottom-nav, #app > .bottom-nav, .bottom-nav');
       if(nav&&nav!==sourceNav)buildDesktopNav(nav);
     };
