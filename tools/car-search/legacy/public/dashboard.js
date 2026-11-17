@@ -458,22 +458,79 @@ function liveStats() {
 }
 
 function render() {
-  if (getSearch() === null && view.startsWith('search:')) view = 'overview';
+  if (getSearch() === null && view.startsWith('search:')) view = 'searches';
   const search = getSearch(); const stats = liveStats();
-  $('breadcrumbView').textContent = search?.name || (view === 'saved' ? 'Saved cars' : 'Overview');
-  $('eyebrow').textContent = search ? 'YOUR SAVED SEARCH' : view === 'saved' ? 'YOUR SHORTLIST' : 'ALL YOUR SEARCHES';
-  $('viewTitle').textContent = search?.name || (view === 'saved' ? 'Cars worth keeping.' : 'Find your next car.');
+  const onSearchesPage = view === 'searches';
+  $('metrics').classList.toggle('hidden', onSearchesPage);
+  $('searchSources').classList.toggle('hidden', onSearchesPage);
+  $('searchesPage').classList.toggle('hidden', !onSearchesPage);
+  $('resultsSection').classList.toggle('hidden', onSearchesPage);
+  $('breadcrumbView').textContent = search?.name || (view === 'saved' ? 'Saved cars' : onSearchesPage ? 'Searches' : 'Overview');
+  $('eyebrow').textContent = search ? 'YOUR SAVED SEARCH' : view === 'saved' ? 'YOUR SHORTLIST' : onSearchesPage ? 'SAVED SEARCHES' : 'ALL YOUR SEARCHES';
+  $('viewTitle').textContent = search?.name || (view === 'saved' ? 'Cars worth keeping.' : onSearchesPage ? 'Your car searches.' : 'Find your next car.');
   $('viewSubtitle').textContent = search ? `Tracking ${search.links.length} car sites from one set of filters. Last checked ${older(search.lastChecked)}.` +
     (search.filters?.colours?.length ? ' Exterior colours: ' +
       search.filters.colours.map(x=>x[0].toUpperCase()+x.slice(1)).join(', ') +
-      (search.filters.includeUnknownColours ? ' (including unknown).' : ' (confirmed only).') : '') : view === 'saved' ? 'Your saved cars, prices and private notes — regardless of search.' : 'Your car searches, combined in one place. Spot fresh listings and price moves.';
-  $('headingActions').innerHTML = search ? `<button class="button quiet" data-action="edit" data-id="${search.id}">✎ Edit search criteria</button><button class="button dark" data-action="refresh" data-id="${search.id}" ${scanBusy?'disabled':''}>↻ Refresh search</button>` : view === 'saved' ? `<button class="button dark" data-action="add-manual">＋ Add car by URL</button><button class="button quiet" data-action="share-saved">↗ Share saved cars</button><button class="button quiet" data-action="export">↓ Export backup</button>` : `<button class="button dark" data-action="refresh-all" ${scanBusy || !state.searches.length ? 'disabled':''}>↻ Refresh all searches</button>`;
+      (search.filters.includeUnknownColours ? ' (including unknown).' : ' (confirmed only).') : '') : view === 'saved' ? 'Your saved cars, prices and private notes — regardless of search.' : onSearchesPage ? 'Check when each search last ran, review updates and open its results.' : 'Listings from all your searches, deduplicated in one place.';
+  $('headingActions').innerHTML = search ? `<button class="button quiet" data-action="view" data-view="searches">← All searches</button><button class="button quiet" data-action="edit" data-id="${esc(search.id)}">✎ Edit search criteria</button><button class="button dark" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>↻ Refresh search</button>` : view === 'saved' ? `<button class="button dark" data-action="add-manual">＋ Add car by URL</button><button class="button quiet" data-action="share-saved">↗ Share saved cars</button><button class="button quiet" data-action="export">↓ Export backup</button>` : onSearchesPage ? `<button class="button dark" data-action="new">＋ New search</button><button class="button quiet" data-action="refresh-all" ${scanBusy || !state.searches.length ? 'disabled':''}>↻ Refresh all</button>` : `<button class="button dark" data-action="refresh-all" ${scanBusy || !state.searches.length ? 'disabled':''}>↻ Refresh all searches</button>`;
   $('metrics').innerHTML = `<div class="metric"><div class="metric-label">${search ? 'Sources' : view === 'saved' ? 'Saved vehicles' : 'Car searches'}</div><strong>${search ? search.links.length : view === 'saved' ? stats.savedCount : state.searches.length}</strong><span>${search ? 'across supported sites' : view === 'saved' ? 'kept across every search' : 'tracked in one dashboard'}</span></div><div class="metric"><div class="metric-label">${view === 'saved' ? 'Live scan vehicles' : 'Cars tracked'}</div><strong>${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).length : stats.carCount}</strong><span>deduplicated where confident</span></div><div class="metric"><div class="metric-label">Newly found</div><strong class="accent-green">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.newIds || []).includes(l.id))).length : stats.newCount}</strong><span>since the previous check</span></div><div class="metric"><div class="metric-label">Price changes</div><strong class="accent-amber">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.changedIds || []).includes(l.id))).length : stats.changedCount}</strong><span>since the previous check</span></div>`;
-  renderNav(); renderSources(search); renderProgress(); renderResults();
+  renderNav();
+  renderProgress();
+  if (onSearchesPage) {
+    renderSearchesPage();
+    return;
+  }
+  renderSources(search);
+  renderResults();
+}
+
+function summaryForSearch(search) {
+  // Count vehicles (not duplicated adverts), in line with the opened results.
+  const cars = grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean));
+  const newIds = new Set(search.lastReport?.newIds || []);
+  const changedIds = new Set(search.lastReport?.changedIds || []);
+  const added = cars.filter(group => group.some(car => newIds.has(car.id))).length;
+  const priceChanges = cars.filter(group => group.some(car => changedIds.has(car.id))).length;
+  const updates = cars.filter(group => group.some(car =>
+    newIds.has(car.id) || changedIds.has(car.id))).length;
+  return { found: cars.length, added, priceChanges, updates };
+}
+
+function renderSearchesPage() {
+  const target = $('searchesPage');
+  if (!state.searches.length) {
+    target.innerHTML = '<div class="searches-empty"><h2>No saved searches yet</h2><p>Create a search to start tracking new car listings and price changes across websites.</p><button class="button dark" data-action="new">＋ Create a search</button></div>';
+    return;
+  }
+  target.innerHTML = `<div class="saved-search-list">${state.searches.map(search => {
+    const stats = summaryForSearch(search);
+    const lastRun = search.lastChecked ?
+      new Date(search.lastChecked).toLocaleString('en-GB', {
+        day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'
+      }) : 'Never';
+    const details = search.lastChecked ? `${older(search.lastChecked)} · ${lastRun}` : 'Not checked yet';
+    const updatesSummary = stats.updates ?
+      `<small>${stats.added} new · ${stats.priceChanges} price changes</small>` : '<small>No updates since last scan</small>';
+    return `<article class="saved-search-row">
+      <div class="saved-search-main">
+        <h2>${esc(search.name)}</h2>
+        <div class="saved-search-sites">${[...new Set((search.links || []).map(link => link.site))].map(site => displaySite(site, 'mini')).join('')}</div>
+      </div>
+      <dl class="saved-search-stats">
+        <div><dt>Last checked</dt><dd>${esc(details)}</dd></div>
+        <div><dt>Cars found</dt><dd>${stats.found}</dd></div>
+        <div><dt>Updates</dt><dd>${stats.updates}${updatesSummary}</dd></div>
+      </dl>
+      <div class="saved-search-actions">
+        <button class="button quiet" type="button" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>↻ Refresh now</button>
+        <button class="button dark" type="button" data-action="view" data-view="search:${esc(search.id)}">Open results →</button>
+      </div>
+    </article>`;
+  }).join('')}</div>`;
 }
 function renderNav() {
   const nav = $('searchNav');
-  nav.innerHTML = `<button class="nav-item ${view === 'overview'?'selected':''}" data-action="view" data-view="overview"><span class="nav-icon">⌂</span><span class="nav-text">Overview</span><span class="nav-number">${state.searches.length}</span></button><button class="nav-item ${view === 'saved'?'selected':''}" data-action="view" data-view="saved"><span class="nav-icon">♡</span><span class="nav-text">Saved cars</span><span class="nav-number">${liveStats().savedCount}</span></button><div class="nav-head nav-subhead">CAR SEARCHES</div>` + state.searches.map(search => `<button class="nav-item ${view === 'search:'+search.id?'selected':''}" data-action="view" data-view="search:${search.id}"><span class="search-mark">${esc(search.name.trim()[0]?.toUpperCase() || 'C')}</span><span class="nav-text" title="${esc(search.name)}">${esc(search.name)}</span>${search.lastReport?.newIds?.length ? `<span class="nav-new" title="Newly found">${search.lastReport.newIds.length}</span>` : `<span class="nav-number">${visibleSearchIds(search).length}</span>`}</button>`).join('');
+  nav.innerHTML = `<button class="nav-item ${view === 'overview'?'selected':''}" data-action="view" data-view="overview"><span class="nav-icon">⌂</span><span class="nav-text">Overview</span></button><button class="nav-item ${view === 'searches' || view.startsWith('search:')?'selected':''}" data-action="view" data-view="searches"><span class="nav-icon">⌕</span><span class="nav-text">Searches</span><span class="nav-number">${state.searches.length}</span></button><button class="nav-item ${view === 'saved'?'selected':''}" data-action="view" data-view="saved"><span class="nav-icon">♡</span><span class="nav-text">Saved cars</span><span class="nav-number">${liveStats().savedCount}</span></button>`;
 }
 function renderSources(search) {
   const el = $('searchSources');
@@ -489,12 +546,6 @@ function renderSources(search) {
       const title = shot?.error ? `<span class="status-error">⚠ ${esc(shot.error)}</span>` : shot?.lastChecked ? `${shot.ids.length} listings seen · ${older(shot.lastChecked)}` : 'Not checked yet';
       return `<div class="source-row">${displaySite(link.site)}<div class="source-copy"><span>${title}</span><small title="${esc(link.sourceNote || '')}">${esc(link.sourceNote || 'Generated search from vehicle filters')}</small></div><button class="button quiet small" data-action="open-url" data-url="${esc(link.url)}">Visit ↗</button></div>`;
     }).join('') + '</div></div></details>';
-  } else if (view === 'overview') {
-    el.innerHTML = `<div class="sources-head"><h2>Your car searches</h2><span>${state.searches.length} ${state.searches.length === 1 ? 'search':'searches'}</span></div><div class="search-overview-grid">` + state.searches.map(s => {
-      const num = grouped(visibleSearchIds(s).map(id => state.listings[id]).filter(Boolean)).length;
-      const changes = (s.lastReport?.newIds?.length || 0) + (s.lastReport?.changedIds?.length || 0);
-      return `<button class="search-overview-card" data-action="view" data-view="search:${s.id}"><div class="search-overview-name">${esc(s.name)}<span>↗</span></div><div class="search-overview-sites">${[...new Set(s.links.map(l => l.site))].map(x => displaySite(x, 'mini')).join('')}</div><div class="search-overview-bottom"><strong>${num} cars</strong><span>${changes ? `<b>${changes} changes</b>` : older(s.lastChecked)}</span></div></button>`;
-    }).join('') + '</div>';
   } else el.classList.add('hidden');
 }
 function renderProgress() {
@@ -677,8 +728,9 @@ function matchesResultFilters(car) {
   return true;
 }
 function wantsDistanceCoordinates() {
-  return !!$('resultDistanceMax').value ||
-    ['distanceNear','distanceFar'].includes($('sortFilter').value);
+  // The distance label is always shown on listing cards once geocoding succeeds.
+  // Only the Searches management page avoids resolving vehicle locations.
+  return view !== 'searches';
 }
 function groupMatchesColour(group) {
   const selected=$('resultColour').value;
@@ -752,6 +804,7 @@ function matchingColourAdvert(group) {
     group.find(matchesResultFilters) || group[0];
 }
 function renderResults() {
+  if (view === 'searches') return;
   const search = getSearch();
   const lists = relevantListings();
   if (wantsDistanceCoordinates()) void ensureDistanceLocations(lists);
@@ -1075,8 +1128,7 @@ function renderCard(g, statuses, inHiddenSection=false) {
   const cardSpecs = [
     car.year && !inTitle(car.year) ? `<span>${car.year}</span>` : '',
     mileage && !inTitle(mileage) ? `<span>${esc(mileage)}</span>` : '',
-    locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg>${esc(locationLabel)}${car.combinedMeta.fields.location.conflict?' (multiple locations)':''}</button>` : '',
-    distance !== null ? `<span title="Straight-line miles from High Lane, Stockport">≈${Math.round(distance)} mi</span>` : '',
+    locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel)}${car.combinedMeta.fields.location.conflict?' · multiple locations':''}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
     exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='photo'?'Estimated from photo (not verified)':car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}${car.colourSource==='photo'?' · estimated':''}</span>` : '',
     car.bhp && !inTitle(`${car.bhp} bhp`) ? `<span>${esc(car.bhp)} bhp</span>` : '',
     transmission && !inTitle(transmission) && !inTitle('DCT') && !inTitle('DSG') && !inTitle('PDK') ? `<span>${transmission==='automatic'?'Automatic':'Manual'}</span>` : ''
