@@ -24,6 +24,8 @@ const stubs=[
  "const SITE_NAMES={autotrader:'Auto Trader',facebook:'Facebook',ebay:'eBay'};",
  "const imageUrl=x=>String(x||'').startsWith('https://')?x:'';",
  "const exteriorColour=x=>['explicit','title'].includes(x.colourSource)?x.colour||'':'';",
+ "const bodyTypeForCar=x=>x.bodyType||'';",
+ "const bodyTypeLabel=x=>x;",
  "const vehicleMileage=x=>x.mileage==null?null:Number(x.mileage);",
  "const effectiveTransmission=x=>x.transmission||'';",
  "const locationForCar=x=>x.location||'';",
@@ -117,7 +119,7 @@ const priceMileageComparisonGroups=grouped;
 const priceMileageRatings=()=>new Map();
 const comparePriceMileageGroups=()=>0;
 const matchesResultFilters=()=>true;
-const groupMatchesColour=()=>true,groupMatchesDistance=()=>true;
+const groupMatchesColour=()=>true,groupMatchesBodyType=()=>true,groupMatchesDistance=()=>true;
 const combinedCarDetails=g=>g[0];
 const milesForGroup=g=>g[0].miles;
 const renderCard=g=>g[0].id+',';
