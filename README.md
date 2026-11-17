@@ -1,3 +1,12 @@
+# DriveHub v142.32
+
+## v142.32 — Relative price-to-mileage ratings and sort
+
+- Car Search result cards now show a compact price indicator: Great price, Good price, Fair price, High price, Poor price or Not rated.
+- Scores compare deduplicated cars of the same model/trim, similar year (within one year) and compatible transmissions. Asking price counts 60% and mileage 40%; lower price and lower mileage are better. At least three comparable cars with reliable prices, years and mileages are required for a qualitative price label.
+- The result sort menu has a new **Best price vs mileage** option using exactly the same relative ranking. If fewer than three comparable cars exist, the sort still works using a simple mileage-adjusted asking-price index, but no confident qualitative badge is assigned.
+- Ratings use the currently displayed listings, not a live independent market valuation; inspect specifications, history, condition and provenance before buying. No car data or filters are modified.
+
 # DriveHub v142.31
 
 ## v142.31 — Streamlined refresh labels, reliable map locations and tablet navigation
