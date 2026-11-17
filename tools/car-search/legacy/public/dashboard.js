@@ -1232,14 +1232,16 @@ async function showCarLocation(ids) {
   if (serial!==locationModalRequest || !dialog.open) return;
   if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng) ||
       point.lat<49 || point.lat>61.5 || point.lng< -9 || point.lng>2.6) {
-    $('locationMapDescription').textContent='The advert says '+location+', but its region could not be located confidently.';
+    $('locationMapDescription').textContent='The advertised area could not be located confidently.';
     return;
   }
   // A regional zoom (not street zoom) makes the surrounding area clear.
+  const areaLabel=locationForCar({location}) || cleanAdvertLocation(point.label) || 'Advertised area';
+  $('locationModalTitle').textContent=areaLabel;
   locationModalMap.setView([point.lat,point.lng],7);
   locationModalMarker=L.marker([point.lat,point.lng]).addTo(locationModalMap)
-    .bindPopup(esc(point.label||location)+'<br>Approximate advertised area').openPopup();
-  $('locationMapDescription').textContent='Showing the area around '+(point.label||location)+'. Zoom or pan to explore the region.';
+    .bindPopup(esc(areaLabel)+'<br>Approximate advertised area').openPopup();
+  $('locationMapDescription').textContent='Showing the area around '+areaLabel+'. Zoom or pan to explore the region.';
   requestAnimationFrame(()=>locationModalMap.invalidateSize());
 }
 
@@ -1304,11 +1306,13 @@ function redrawListingMap(groups, pending=0, failed=false) {
         esc([...new Set(group.map(car => SITE_NAMES[car.site] || car.site))].join(' · ')) +
         '</small></span></button>';
     }).join('');
-    const popup = '<div class="map-popup"><strong>' + esc(point.label || 'Advert location') +
+    const popup = '<div class="map-popup"><strong>' +
+      esc(locationForCar({location:point.label}) || 'Advertised area') +
       '</strong><small>' + esc(point.precision || 'Approximate area') +
       '</small><div class="map-popup-cars">' + rows + '</div></div>';
     marker.bindPopup(popup, {maxWidth:330, minWidth:210, maxHeight:330}).addTo(listingMapLayer);
-    marker.bindTooltip(count + (count===1?' car':' cars') + ' near ' + (point.label || 'this area'));
+    marker.bindTooltip(count + (count===1?' car':' cars') + ' near ' +
+      (locationForCar({location:point.label}) || 'this area'));
     bounds.push([point.lat,point.lng]);
   }
   if (bounds.length > 1) listingMap.fitBounds(bounds,{padding:[40,40],maxZoom:10});
