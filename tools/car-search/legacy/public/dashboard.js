@@ -635,6 +635,12 @@ function combinedCarDetails(group, preferred=null) {
     group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='explicit')
       ? 'explicit' : group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='title')
       ? 'title' : 'photo';
+  if (combined.colourSource === 'photo') {
+    // The matching colour may come from a different provider than focus.
+    combined.photoColourConfidence = Math.max(0, ...group
+      .filter(row => row.colourSource === 'photo' && exteriorColour(row) === fields.colour.value)
+      .map(row => Number(row.photoColourConfidence) || 0));
+  }
   // This object's fields and sources are for presentation only.
   combined.combinedMeta={
     fields,sources:group.map(row=>({
