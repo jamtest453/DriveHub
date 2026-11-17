@@ -68,6 +68,9 @@ function resetDerivedCache() {
 let resultsLayout = 'list';
 let listingMap = null, listingMapLayer = null;
 const locationPoints = new Map();
+const locationIssues = new Map();
+let lastMapGroups = [];
+let activeModalLocationIds = [];
 const DISTANCE_ORIGIN = {lat:53.36397,lng:-2.06781,label:'High Lane, Stockport'};
 const distanceLookups = new Set();
 const distanceFailures = new Set();
@@ -907,7 +910,32 @@ function locationForCar(car) {
   return cleanAdvertLocation(car?.location).split(',')[0].trim();
 }
 function mapLocationForCar(car) {
-  return cleanAdvertLocation(car?.location) || postcodeOnlyLocation(car?.location);
+  const original=String(car?.location||'').replace(/\s+/g,' ').trim();
+  if (!cleanAdvertLocation(original) && !postcodeOnlyLocation(original)) return '';
+  // Mapping sees the original postcode and mileage evidence. The card's
+  // visible place label is independently cleaned by locationForCar().
+  return original.replace(/\s*\(\s*multiple locations\s*\)/ig,'')
+    .replace(/\s*[·,;|–—-]?\s*multiple locations\s*$/ig,'').trim().slice(0,120);
+}
+function rememberLocationResult(row) {
+  if (!row || typeof row.location!=='string') return;
+  const key=mapLocationKey(row.location);
+  const point=row.point || null;
+  locationIssues.set(key,{
+    status:row.status || (point?'mapped':'unmatched'),
+    reason:row.reason || (point?'Approximate advertised area located.':
+      'No reliable UK location match was returned.'),
+    retryable:row.retryable!==false && !point
+  });
+  if (point) {
+    locationPoints.set(key,point);
+    distanceFailures.delete(key);
+  } else if (row.status==='temporary') {
+    locationPoints.delete(key);
+    distanceFailures.add(key);
+  } else {
+    locationPoints.set(key,null);
+  }
 }
 function milesForGroup(group) {
   const points=group.map(car => locationPoints.get(mapLocationKey(mapLocationForCar(car))))
@@ -937,14 +965,21 @@ async function ensureDistanceLocations(cars) {
           method:'POST',body:JSON.stringify({locations:chunk})
         });
         for (const row of answer.locations || [])
-          if (row && typeof row.location === 'string')
-            locationPoints.set(mapLocationKey(row.location),row.point || null);
+          rememberLocationResult(row);
         for (const loc of chunk)
-          if (!locationPoints.has(mapLocationKey(loc)))
-            locationPoints.set(mapLocationKey(loc),null);
+          if (!locationPoints.has(mapLocationKey(loc))) {
+            rememberLocationResult({location:loc,status:'temporary',
+              reason:'The location service did not return a result.',retryable:true});
+          }
       } catch(error) {
         console.warn('Could not map some advertised locations:',error.message);
-        for (const loc of chunk) distanceFailures.add(mapLocationKey(loc));
+        for (const loc of chunk) {
+          distanceFailures.add(mapLocationKey(loc));
+          locationIssues.set(mapLocationKey(loc),{
+            status:'temporary',reason:'The location lookup failed: '+error.message,
+            retryable:true
+          });
+        }
         // Do not hammer geocoding repeatedly if it is temporarily offline.
       }
       // Avoid re-building every listing card after every 25 geocodes.
@@ -1233,17 +1268,17 @@ function renderResults() {
 function mapLocationForGroup(group) {
   const locations=[...new Set(group.map(mapLocationForCar).filter(Boolean))];
   if (!locations.length) return '';
-  // A named locality is preferable to a raw postcode; a county qualifier
-  // helps the resolver distinguish similarly named towns.
-  const names=locations.filter(loc=>!!cleanAdvertLocation(loc));
-  const choices=names.length ? names : locations;
-  const mapped=choices.find(loc=>locationPoints.get(mapLocationKey(loc))?.lat);
-  if(mapped) return mapped;
-  return [...choices].sort((a,b)=>Number(b.includes(','))-Number(a.includes(',')))[0];
+  // Prefer a reliable full postcode over an ambiguous town name. If the
+  // postcode failed to resolve, use any other independently mapped source.
+  const ranked=[...locations].sort((a,b)=>
+    Number(!!postcodeOnlyLocation(b))-Number(!!postcodeOnlyLocation(a)) ||
+    Number(b.includes(','))-Number(a.includes(',')));
+  return ranked.find(loc=>locationPoints.get(mapLocationKey(loc))?.lat) || ranked[0];
 }
 function mapLocationKey(location) {
-  const place=cleanAdvertLocation(location);
-  return (place || postcodeOnlyLocation(location)).toLowerCase();
+  // Do not collapse a full postcode or mileage hint into a generic town:
+  // "Hayes (40 miles)" is not necessarily the same Hayes as 157 miles.
+  return String(location||'').trim().replace(/\s+/g,' ').toLowerCase();
 }
 let leafletFallbackPromise=null;
 async function ensureMapLibrary() {
@@ -1268,11 +1303,13 @@ async function ensureMapLibrary() {
 }
 async function showCarLocation(ids) {
   const rows=ids.map(id=>state.listings[id]).filter(Boolean);
+  activeModalLocationIds=[...ids];
   const location=mapLocationForGroup(rows);
   if (!location) { toast('This listing has no advertised location to map.',true); return; }
   const serial=++locationModalRequest;
   $('locationModalTitle').textContent=locationForCar({location}) || 'Advertised area';
   $('locationMapDescription').textContent='Finding the approximate advertised area…';
+  $('retryLocationMap').classList.add('hidden');
   const dialog=$('locationDialog');
   if (!dialog.open) show('locationDialog');
   const wrap=$('locationMiniMap');
@@ -1297,17 +1334,24 @@ async function showCarLocation(ids) {
       const data=await api('/api/map/locations',{
         method:'POST',body:JSON.stringify({locations:[location]})
       });
-      point=(data.locations||[]).find(item=>item.location===location)?.point||null;
-      locationPoints.set(mapLocationKey(location),point);
+      const row=(data.locations||[]).find(item=>item.location===location);
+      if(row) rememberLocationResult(row);
+      point=row?.point || null;
     } catch(error) {
-      $('locationMapDescription').textContent='Could not locate this advertised area: '+error.message;
+      $('locationMapDescription').textContent='Location lookup failed: '+error.message;
+      locationIssues.set(mapLocationKey(location),{status:'temporary',
+        reason:'Location lookup failed: '+error.message,retryable:true});
+      $('retryLocationMap').classList.remove('hidden');
       return;
     }
   }
   if (serial!==locationModalRequest || !dialog.open) return;
   if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng) ||
       point.lat<49 || point.lat>61.5 || point.lng< -9 || point.lng>2.6) {
-    $('locationMapDescription').textContent='The advertised area could not be located confidently.';
+    const issue=locationIssues.get(mapLocationKey(location));
+    $('locationMapDescription').textContent=issue?.reason ||
+      'The advertised area could not be located confidently.';
+    $('retryLocationMap').classList.remove('hidden');
     return;
   }
   // A regional zoom (not street zoom) makes the surrounding area clear.
