@@ -1,3 +1,12 @@
+# v142.27 — Global navigation and make/model searches
+
+- Car Search's Overview, Saved cars and individual saved-search navigation now appears in DriveHub's shared header instead of a left sidebar. The header also provides Facebook connection, Settings and New search; on small screens a saved-search selector avoids overcrowding.
+- The same header shows each selected tool's own navigation on mobile as well as desktop, keeping the DriveHub Home icon clickable throughout. Removed Car Search's redundant Open full screen option.
+- Auto Trader searches now identify the manufacturer from the start of a search name and use a recognised model where available, falling back to the remaining keywords when there is no model match.
+- PistonHeads searches use public make pages and verified make/model page paths where known; unknown models use keywords rather than guessed make/model IDs. eBay and Facebook retain their full-text query behaviour.
+- Existing saved searches regenerate provider URLs on their next scan without changing their saved listings, notes or snapshot identities.
+- No changes to the saved database schema, photo-colour analysis or existing scan credentials. Added regression coverage for make/model matching and header interactions.
+
 # v142.26 — Car photo colours, location maps and one DriveHub header
 
 - Detect likely exterior paint colour from the listing image using deterministic Pillow HSV image sampling alongside existing photo fingerprints; **no AI or external recognition API**. A conservative confidence threshold rejects ambiguous images. Manual, explicit advert and title colours take precedence; photo-derived colour is labelled as an estimate.

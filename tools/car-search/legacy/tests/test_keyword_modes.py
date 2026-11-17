@@ -29,7 +29,12 @@ def test_provider_search_remains_broad_for_required_and_preferred():
                            search_name="BMW M2")
     assert len(links) == 4
     for item in links:
-        assert "BMW+M2" in item["url"] or "BMW%20M2" in item["url"]
+        if item["site"] == "autotrader":
+            assert "make=BMW" in item["url"] and "model=M2" in item["url"]
+        elif item["site"] == "pistonheads":
+            assert item["url"].endswith("/buy/bmw/m2")
+        else:
+            assert "BMW+M2" in item["url"] or "BMW%20M2" in item["url"]
         assert all(term not in item["url"].lower()
                    for term in ("heated", "manual", "harman", "performance", "convertible"))
 

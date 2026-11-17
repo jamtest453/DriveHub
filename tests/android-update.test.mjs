@@ -24,7 +24,7 @@ const capConfig=fs.readFileSync(path.join(ROOT,'android-shell/capacitor.config.t
 assert.match(capConfig,/appId:'app\.drivehub\.mobile'/,'Android shell has a stable package id placeholder');
 assert.match(capConfig,/webDir:'web'/,'Android shell ships a local fallback web bundle');
 assert.match(capConfig,/autoUpdate:'atBackground'/,'Android updater downloads and applies web releases outside Play');
-assert.match(capConfig,/version:'142\.26\.0'/,'native shell identifies the bundled web baseline to avoid downloading the same release again');
+assert.match(capConfig,/version:'142\.27\.0'/,'native shell identifies the bundled web baseline to avoid downloading the same release again');
 assert.match(capConfig,/DRIVEHUB_OTA_CHANNEL/,'native builds can target stable or beta OTA channels');
 assert.match(capConfig,/\/api\/app\/update\?channel=\$\{otaChannel\}/,'Android shell uses DriveHub self-hosted channel-aware update endpoint');
 assert.match(capConfig,/statsUrl:''/,'self-hosted updater does not send Capgo usage stats');
@@ -34,7 +34,7 @@ assert.equal(build.status,0,`Android web bundle builds: ${build.stderr||build.st
 for(const route of ['index.html','garage/index.html','valuation/index.html','roads/index.html']){
   const html=fs.readFileSync(path.join(ROOT,'android-shell/web',route),'utf8');
   assert.match(html,/meta name="drivehub-api-origin" content="https:\/\/drivehub-production-7aa4f6f5\.up\.railway\.app"/i,`${route} carries the hosted API origin into the local native bundle`);
-  assert.match(html,route==='index.html'?/drivehub-runtime\.js\?v=14226/:/drivehub-runtime\.js\?v=14221/,`${route} loads the native-aware DriveHub runtime`);
+  assert.match(html,route==='index.html'?/drivehub-runtime\.js\?v=14227/:/drivehub-runtime\.js\?v=14221/,`${route} loads the native-aware DriveHub runtime`);
 }
 assert.equal(fs.existsSync(path.join(ROOT,'android-shell/web/garage/js/app.bundle.js')),true,'Android fallback contains the actual MyGarage application bundle');
 assert.ok(fs.existsSync(path.join(ROOT,'android-shell/web/search/index.html')),'Android fallback contains the Car Search tool shell');
@@ -83,7 +83,7 @@ try{
   data=await r.json();
   assert.equal(data.error,'no_new_version_available','current web bundle is not re-downloaded');
 
-  r=await update({platform:'android',version_code:'1',version_name:'142.26.0'});
+  r=await update({platform:'android',version_code:'1',version_name:'142.27.0'});
   data=await r.json();
   assert.equal(data.error,'no_new_version_available','a device on a newer web bundle is never downgraded');
 

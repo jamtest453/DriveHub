@@ -14,7 +14,8 @@ def test_autotrader_search_always_excludes_recorded_writeoffs():
     link = generate_links(validate_filters({"keywords":""}), ["autotrader"], "BMW M2")[0]
     params = parse_qs(urlsplit(link["url"]).query)
     assert params["exclude-writeoff-categories"] == ["on"]
-    assert params["keywords"] == ["BMW M2"]
+    assert params["make"] == ["BMW"] and params["model"] == ["M2"]
+    assert "keywords" not in params
 
 
 def test_legacy_autotrader_url_is_forced_to_exclude_writeoffs_on_all_pages():
