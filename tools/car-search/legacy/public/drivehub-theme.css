@@ -156,3 +156,14 @@ h1 { font-size: clamp(33px,3.5vw,48px); line-height: 1.05; }
 .location-mini-map{height:clamp(300px,53dvh,520px);margin:0 17px 10px;border:1px solid rgba(20,49,58,.14);border-radius:15px;overflow:hidden;background:#e5eeeb}
 .location-modal .location-map-disclaimer{font-size:12px;color:#587078;margin-bottom:0}
 @media(max-width:650px){.location-mini-map{margin:0 10px 10px;height:52dvh;min-height:260px}.location-modal .modal-head{padding:13px 15px}.location-modal .helper{padding:0 15px}}
+
+/* v142.27: Car Search navigation and primary controls have moved to DriveHub's
+   shared header. Keep the original nodes in the DOM as live event targets. */
+.app-shell{grid-template-columns:minmax(0,1fr)!important;min-width:0}
+.sidebar{display:none!important}
+.topbar{display:none!important}
+.app-shell .main{min-width:0;width:100%}
+.app-shell .content{max-width:1620px;margin-inline:auto;padding:clamp(18px,2.4vw,34px) clamp(12px,3vw,46px) 72px}
+@media(max-width:700px){
+  .app-shell .content{padding:16px 12px 70px}
+}
