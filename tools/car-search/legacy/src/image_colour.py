@@ -86,7 +86,7 @@ def estimate_paint(image):
                        if tile_votes[(tile, primary)] / total >= 0.48)
         share = count / samples
         separation = (count-second) / max(1, vivid)
-        if share >= 0.28 and separation >= 0.38 and coherent >= 3:
+        if share >= 0.38 and separation >= 0.55 and coherent >= 4:
             confidence = min(.94, .66 + .20 * min(1., share/.64)
                              + .10 * separation + .02 * (coherent/12))
             return {'colour': primary, 'confidence': round(confidence, 3)}
@@ -97,6 +97,6 @@ def estimate_paint(image):
         primary, count = neutral.most_common(1)[0]
         next_count = neutral.most_common(2)[1][1] if len(neutral) > 1 else 0
         share = count / samples
-        if share >= 0.55 and next_count / samples <= 0.13 and vivid/samples < 0.12:
+        if share >= 0.55 and next_count / samples <= 0.10 and vivid/samples < 0.10:
             return {'colour': primary, 'confidence': round(min(.91, .79 + share*.13), 3)}
     return None
