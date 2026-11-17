@@ -133,11 +133,13 @@ try{
 
 const fs=await import('node:fs/promises');
 const dashboard=await fs.readFile(new URL('../legacy/public/dashboard.js',import.meta.url),'utf8');
-const photoEstimator=await fs.readFile(new URL('../legacy/src/image_colour.py',import.meta.url),'utf8');
+const photoHash=await fs.readFile(new URL('../legacy/src/photo_hash.py',import.meta.url),'utf8');
 const worker=await fs.readFile(new URL('../legacy/server.py',import.meta.url),'utf8');
 assert.match(dashboard,/details class="search-sources-panel"/,'source URLs are collapsed into a details panel');
 assert.match(dashboard,/const wasOpen = el.dataset.searchId/,'expanded panel persists during refreshes');
 assert.match(dashboard,/includeUnknownColours \?\? true/,'new searches include unknown colours by default');
 assert.match(dashboard,/const cardSpecs = \[/,'listing specifications are deduplicated');
-assert.match(photoEstimator,/share >= 0\.38 and separation >= 0\.55 and coherent >= 4/,'image colour vote must be coherent');
-assert.match(worker,/paint\.get\('confidence', 0\) >= \.86/,'worker requires higher image colour confidence');
+assert.doesNotMatch(photoHash,/estimate_paint/,'photo hashing no longer estimates paint');
+assert.doesNotMatch(worker,/paint\.get\('confidence'/,'backend never uses photo colours');
+assert.match(worker,/remove_photo_colour_guesses/,'legacy photo guesses are cleared');
+assert.match(worker,/asyncio\.wait_for\(/,'refresh has an explicit source timeout');
