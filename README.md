@@ -1,4 +1,11 @@
-# DriveHub v142.28
+# DriveHub v142.29
+
+## v142.29 — Searches dashboard and inline listing distance
+
+- Car Search's global header now has three fixed sections: Overview, Searches and Saved cars. Individual saved-search names no longer fill the header or mobile selector.
+- Searches opens a dedicated page for every saved search, showing the latest check time, deduplicated vehicles found and updates since the last scan (new listings and price changes). Refresh now scans only that search; Open results takes you directly to that search's full results. The results page has a Back to all searches button.
+- Listing cards now show a known approximate straight-line distance from High Lane within the clickable location, e.g. Hayes (157 miles). Missing distances are resolved asynchronously without changing the advertised location, and the separate distance chip is removed.
+- Existing searches, scan history, saved cars, notes and filter settings remain unchanged.
 
 ## v142.28 — Compact Car Search cards and single-row tool navigation
 
