@@ -921,6 +921,9 @@ function rememberLocationResult(row) {
   if (!row || typeof row.location!=='string') return;
   const key=mapLocationKey(row.location);
   const point=row.point || null;
+  // An older background-distance request must never overwrite a valid
+  // position found by a newer explicit retry.
+  if (!point && locationPoints.get(key)?.lat) return;
   locationIssues.set(key,{
     status:row.status || (point?'mapped':'unmatched'),
     reason:row.reason || (point?'Approximate advertised area located.':
