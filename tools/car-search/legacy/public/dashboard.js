@@ -926,7 +926,7 @@ function priceMileageRatings(groups) {
     const peers=(cohorts.get(row.family) || []).filter(peer=>
       Math.abs(peer.year-row.year)<=1 &&
       (!row.transmission || !peer.transmission || row.transmission===peer.transmission));
-    const sufficient=peers.length>=3;
+    const sufficient=peers.length>=3 && Number.isFinite(row.adjustedCost);
     const priceRank=sufficient ? priceMileagePercentile(row.price,peers,'price') : null;
     const milesRank=sufficient ? priceMileagePercentile(row.mileage,peers,'mileage') : null;
     const combinedRank=sufficient ? .6*priceRank+.4*milesRank : null;
