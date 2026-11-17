@@ -108,4 +108,4 @@ let releaseHtml=fs.readFileSync(path.join(gatewayDir,'release-notes.html'),'utf8
 releaseHtml=releaseHtml.replace(/<link rel="stylesheet" href="styles\.css(\?v=[\w.]+)?">/,`<style>\n${fs.readFileSync(path.join(gatewayDir,'styles.css'),'utf8')}\n</style>`);
 releaseHtml=releaseHtml.replace(/href="\/"/g,'href="index.html"');
 fs.writeFileSync(path.join(ROOT,'release-notes.html'),releaseHtml);
-console.log('Rebuilt standalone DriveHub gateway plus MyGarage, Road Finder, Valuation and shared chrome (DriveHub v142.32)');
+console.log('Rebuilt standalone DriveHub gateway plus MyGarage, Road Finder, Valuation and shared chrome (DriveHub v142.33)');
