@@ -336,3 +336,18 @@
   .drivehub-desktop-nav__mark,.drivehub-desktop-nav__mark svg{width:32px!important;height:32px!important}
   .drivehub-search-select{flex-basis:95px;max-width:95px}
 }
+
+/* v142.31: right-align the shared tool navigation on tablets, while keeping
+   overflow scrollable when the available width is genuinely too small. */
+.drivehub-desktop-nav__actions{
+  justify-content:flex-start!important;
+  margin-left:auto!important;
+}
+.drivehub-desktop-nav__actions > :first-child{
+  margin-left:auto!important;
+}
+@media(max-width:899px){
+  /* The Search tabs are hidden here; the selector becomes the first
+     visible control and must also hug the right edge. */
+  .drivehub-search-select{margin-left:auto!important}
+}
