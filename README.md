@@ -1,4 +1,11 @@
-# DriveHub v142.30
+# DriveHub v142.31
+
+## v142.31 — Streamlined refresh labels, reliable map locations and tablet navigation
+
+- Removed the duplicate saved-search-progress indicator. Searches continue to show Refreshing… directly on the active Refresh now button while its scan runs.
+- Listing cards no longer append the “multiple locations” qualifier to the advertised place. Map and distance lookups now strip this display-only label and source mileage annotations, using clean town/postcode values from original adverts. When duplicate adverts have different places, the map can still select a usable source location.
+- The shared top navigation is aligned to the right on tablet widths, including Car Search’s compact section selector. Auto margins keep controls right-aligned when space permits without breaking horizontal scrolling on smaller screens.
+- Existing saved searches, cars, notes and scan history remain unchanged.
 
 ## v142.30 — Reliable search refreshes, quicker navigation and editable results
 
