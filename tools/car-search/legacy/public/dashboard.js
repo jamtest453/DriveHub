@@ -923,7 +923,7 @@ function priceMileageDepreciation(peers) {
   const typical=priceMileageMedian(peers.map(row=>row.price));
   const upperBound=typical*.10/10000;
   const fromListings=priceMileageMedian(pairs);
-  if(Number.isFinite(fromListings) && fromListings>0) {
+  if(pairs.length>=2 && Number.isFinite(fromListings) && fromListings>0) {
     return {rate:Math.min(fromListings,upperBound),estimated:false};
   }
   // A sparse or noisy cohort should still support a *tentative* comparison
