@@ -11,12 +11,12 @@
       if(window.parent!==window)return;
       if(!document.querySelector('link[data-drivehub-header-style]')){
         const style=document.createElement('link');
-        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14227';
+        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14228';
         style.dataset.drivehubHeaderStyle='true';document.head.appendChild(style);
       }
     }
-    if(document.documentElement.dataset.drivehubChrome==='14227')return;
-    document.documentElement.dataset.drivehubChrome='14227';
+    if(document.documentElement.dataset.drivehubChrome==='14228')return;
+    document.documentElement.dataset.drivehubChrome='14228';
 
     let sourceNav=null;
     let sourceObserver=null;
@@ -55,7 +55,7 @@
     };
     const syncDesktopNav=()=>{
       if(!sourceNav||!desktopNav)return;
-      const originals=[...sourceNav.querySelectorAll('.nav-btn')];
+      const originals=[...sourceNav.querySelectorAll('.nav-btn:not(.gateway-home)')];
       const proxies=[...desktopNav.querySelectorAll('.drivehub-desktop-nav__item')];
       if(originals.length!==proxies.length){buildDesktopNav(sourceNav);return}
       originals.forEach((original,index)=>{
@@ -245,7 +245,7 @@
       const label=String(nav.getAttribute('aria-label')||'DriveHub').replace(/\s+(?:sections|navigation)$/i,'').trim()||'DriveHub';
       const tool=toolFromLabel(label);
       recordRecent(tool,displayTool(tool));
-      [...nav.querySelectorAll('.nav-btn')].forEach(original=>{
+      [...nav.querySelectorAll('.nav-btn:not(.gateway-home)')].forEach(original=>{
         const proxy=document.createElement('button');
         proxy.type='button';
         proxy.className='drivehub-desktop-nav__item';
