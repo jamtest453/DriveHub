@@ -261,6 +261,13 @@ class LocationResolver:
     async def _lookup(self, client, request):
         kind, value, hint, *extra = request
         miles = extra[0] if extra else None
+        fallback = extra[1] if len(extra) > 1 else None
+
+        def finish(point, definitive, status=None):
+            self.lookup_status[request] = (status or ("mapped" if point else
+                                                     "unmatched" if definitive else "temporary"))
+            return point, definitive
+
         if kind == "postcode":
             url = "https://api.postcodes.io/postcodes/" + quote(value, safe="")
             precision = "Postcode centroid (approx.)"
@@ -270,31 +277,42 @@ class LocationResolver:
         else:
             url = "https://api.postcodes.io/places"
             precision = "Town or city centre (approx.)"
+
+        async def postcode_fallback():
+            # Wrong full postcode need not hide the correctly named town.
+            if fallback:
+                secondary = (*fallback, miles)
+                point, definitive = await self._lookup(client, secondary)
+                return finish(point, definitive, self.lookup_status.get(secondary))
+            return finish(None, True, "invalid_postcode")
+
         try:
-            response = await client.get(url, params={"q": value, "limit": 75} if kind == "place" else None)
+            response = await client.get(url, params={"q": value, "limit": 100}
+                                        if kind == "place" else None)
             if response.status_code == 404:
-                return None, True
+                return await postcode_fallback() if kind == "postcode" else finish(
+                    None, True, "invalid_postcode" if kind == "outcode" else "unmatched")
             if response.status_code != 200:
-                return None, False
+                return finish(None, False, "temporary")
             result = response.json().get("result")
             if kind == "place":
                 origin = await self._origin(client) if miles is not None else None
-                return find_place(result, value, hint, distance=miles, origin=origin), True
-            # Postcodes.io gives administrative place names alongside the
-            # postcode coordinates. Show an area name, never a raw postcode,
-            # in marker captions and location dialogs.
-            locality = value
-            if isinstance(result, dict):
-                locality = next((str(result.get(k)).strip() for k in
-                    ("parish", "admin_ward", "admin_district", "region")
-                    if result.get(k) and str(result[k]).strip().casefold() not in
-                    ("unparished area", "unparished", "none")), "Advertised area")
-            return valid_point(result, precision, locality), True
+                point, status = find_place_detailed(result, value, hint, miles, origin)
+                return finish(point, True, status)
+            if not isinstance(result, dict):
+                return await postcode_fallback() if kind == "postcode" else finish(
+                    None, True, "invalid_postcode")
+            locality = next((str(result.get(k)).strip() for k in
+                ("parish", "admin_ward", "admin_district", "region")
+                if result.get(k) and str(result[k]).strip().casefold() not in
+                ("unparished area", "unparished", "none")), "Advertised area")
+            point = valid_point(result, precision, locality)
+            return finish(point, True, "mapped" if point else "invalid_postcode")
         except (httpx.HTTPError, ValueError, AttributeError, TypeError):
-            return None, False
+            return finish(None, False, "temporary")
 
-    async def resolve(self, locations, data_dir=None):
-        """Return a matching result for each advertised location, including misses."""
+    async def resolve(self, locations, data_dir=None, *, retry=False):
+        """Resolve locations with diagnostics; explicit retry skips negative cache."""
         if not isinstance(locations, list) or len(locations) > 30 or any(
             not isinstance(loc, str) or len(loc) > 120 for loc in locations
         ):
@@ -303,47 +321,72 @@ class LocationResolver:
         cache_path = data / "location-map-cache.json"
         async with self.lock:
             self._load_cache(cache_path)
+            self.lookup_status = {}
             now = time.time()
             pending = {}
             output = {}
             for location in locations:
                 raw = clean_location(location)
                 if not raw:
-                    output[location] = None
+                    status = "missing" if not str(location).strip() or str(location).strip().casefold() in IGNORED else "unsupported"
+                    output[location] = (None, status)
                     continue
                 key = cache_key(location)
                 cached = self.cache.get(key)
-                if cached and (cached.get("point") is not None or now - cached.get("checked", 0) < 86400):
-                    output[location] = cached.get("point")
+                if cached and (cached.get("point") is not None or
+                    (not retry and now - cached.get("checked", 0) < 86400)):
+                    point = cached.get("point")
+                    output[location] = (point, cached.get("status") or
+                        ("mapped" if point else "unmatched"))
                 else:
-                    request = place_request(raw)
+                    request = place_request(location)
                     if request:
-                        pending[key] = (*request, distance_hint(location))
+                        # Full postcodes are tried before the named locality,
+                        # but a bad postcode can still fall back to a town.
+                        fallback = None
+                        if request[0] == "postcode":
+                            town = place_request(raw)
+                            if town and town[0] == "place":
+                                fallback = town
+                        pending[key] = (*request, distance_hint(location), fallback)
                     else:
-                        output[location] = None
+                        output[location] = (None, "unsupported")
             if pending:
-                # Modest parallelism, manual map-only lookups, persisted cache.
                 semaphore = asyncio.Semaphore(3)
                 async with httpx.AsyncClient(timeout=7.0, follow_redirects=False,
-                         headers={"User-Agent": "CarSearchHub/3.9 location-map (postcodes.io)"}) as client:
+                        headers={"User-Agent": "CarSearchHub/4.0 location-map (postcodes.io)"}) as client:
                     async def work(key, request):
                         async with semaphore:
                             point, definitive = await self._lookup(client, request)
-                            return key, point, definitive
+                            status = self.lookup_status.get(request,
+                                     "mapped" if point else
+                                     "unmatched" if definitive else "temporary")
+                            return key, point, definitive, status
                     found = await asyncio.gather(*(work(k, v) for k, v in pending.items()))
                 updated = False
-                for key, point, definitive in found:
+                results = {key: (point, status) for key, point, _, status in found}
+                for key, point, definitive, status in found:
+                    # Upstream errors are never saved as permanent misses.
                     if definitive:
-                        self.cache[key] = {"point": point, "checked": now}
+                        self.cache[key] = {"point": point, "status": status,
+                                           "checked": now}
                         updated = True
                 if updated:
                     try:
                         self._save_cache()
                     except OSError:
-                        pass  # Map can still display resolved locations without disk access.
+                        pass
                 for location in locations:
                     key = cache_key(location)
                     if key in pending:
-                        row = next((x for x in found if x[0] == key), None)
-                        output[location] = row[1] if row else None
-            return [{"location": loc, "point": output.get(loc)} for loc in locations]
+                        output[location] = results.get(key, (None, "temporary"))
+            return [
+                {"location": loc, "point": output.get(loc, (None, "missing"))[0],
+                 "status": output.get(loc, (None, "missing"))[1],
+                 "reason": LOCATION_STATUS.get(
+                     output.get(loc, (None, "missing"))[1],
+                     LOCATION_STATUS["unmatched"]),
+                 "retryable": output.get(loc, (None, "missing"))[1] not in
+                     ("mapped", "missing")}
+                for loc in locations
+            ]
