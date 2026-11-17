@@ -1442,26 +1442,55 @@ function redrawListingMap(groups, pending=0, failed=false) {
     ? 'Finding ' + pending + ' advertised locations…'
     : failed ? 'Some locations could not be checked right now.'
     : (clusters.size + ' approximate locations · ' + unmapped.length + ' cars without a map position');
-  const missingLocation = unmapped.filter(({location}) => !location).length;
-  const knownButUnresolved = unmapped.length - missingLocation;
+  const missingLocation=unmapped.filter(({group,location})=>
+    !location && !group.some(car=>String(car.location||'').trim())).length;
+  const availableRetries=unmapped.filter(({group})=>
+    group.some(car=>locationIssues.get(mapLocationKey(mapLocationForCar(car)))?.retryable)).length;
+  const reasonFor=({group,location})=>{
+    if (!location) return group.some(car=>String(car.location||'').trim()) ?
+      'The advertised text is not a usable UK location.' :
+      'No advertised location supplied.';
+    const issues=group.map(mapLocationForCar).filter(Boolean)
+      .map(loc=>locationIssues.get(mapLocationKey(loc))).filter(Boolean);
+    // Report a real failure before a speculative pending status.
+    const issue=issues.find(row=>row.status==='ambiguous') ||
+      issues.find(row=>row.status==='temporary') ||
+      issues.find(row=>row.status==='invalid_postcode') ||
+      issues.find(row=>row.status==='unsupported') ||
+      issues.find(row=>row.status==='unmatched') ||
+      issues[0];
+    return issue?.reason || (pending ? 'Checking advertised location…' :
+      'Location has not yet been checked.');
+  };
   $('unmappedCars').innerHTML = unmapped.length ? (
     '<details class="unmapped-details"><summary>' + unmapped.length +
-    (unmapped.length===1 ? ' car' : ' cars') +
-    ' not placed on the map <span>— ' + knownButUnresolved +
-    ' advertised locations could not be matched uniquely' +
-    (missingLocation ? '; ' + missingLocation + ' have no location' : '') +
-    (pending ? ' (geocoding in progress)' : '') + '</span></summary>' +
-    '<div class="unmapped-list">' + unmapped.map(({group,location}) => {
-      const primary = group[0];
-      return '<button type="button" class="unmapped-item" data-map-ids="' +
-        esc(group.map(c=>c.id).join(',')) + '"><span>' + esc(primary.title) +
-        '</span><small>' + esc(locationForCar({location}) || (location ? 'Advertised area' : 'Location not provided')) + '</small></button>';
+    (unmapped.length===1?' car':' cars') +
+    ' not placed on the map <span>— ' + missingLocation +
+    ' with no advertised location' + (pending?' · Checking locations…':'') +
+    '</span></summary>' +
+    (availableRetries?
+      '<div class="unmapped-actions"><button type="button" class="button quiet" data-map-retry="all">Retry ' +
+      availableRetries + ' unresolved ' +
+      (availableRetries===1?'car':'cars') + '</button></div>' : '') +
+    '<div class="unmapped-list">' + unmapped.map(item=>{
+      const {group,location}=item;
+      const primary=group[0];
+      const hasFailure=group.some(car=>
+        locationIssues.get(mapLocationKey(mapLocationForCar(car)))?.retryable);
+      const ids=esc(group.map(car=>car.id).join(','));
+      return '<div class="unmapped-row"><button type="button" class="unmapped-item" data-map-ids="' +
+        ids + '"><span>' + esc(primary.title) +
+        '</span><small>' + esc(locationForCar({location}) || 'Advertised area unavailable') +
+        ' · ' + esc(reasonFor(item)) + '</small></button>' +
+        (hasFailure ? '<button type="button" class="button quiet unmapped-retry" data-map-retry="' +
+          ids + '">Retry</button>' : '') + '</div>';
     }).join('') + '</div></details>'
   ) : '';
   requestAnimationFrame(() => listingMap.invalidateSize());
 }
 async function showListingsMap(groups) {
   mapShown = true;
+  lastMapGroups=groups;
   const ticket=++mapRequestId;
   $('mapCount').textContent='Preparing map…';
   if (!await ensureMapLibrary()) {
@@ -1493,11 +1522,12 @@ async function showListingsMap(groups) {
       const answer = await api('/api/map/locations',{
         method:'POST',body:JSON.stringify({locations:chunk})
       });
-      for (const row of answer.locations || []) {
-        if (row && typeof row.location === 'string') {
-          locationPoints.set(mapLocationKey(row.location), row.point || null);
-        }
-      }
+      for (const row of answer.locations || []) rememberLocationResult(row);
+      for (const location of chunk)
+        if (!locationPoints.has(mapLocationKey(location)) &&
+            !locationIssues.has(mapLocationKey(location)))
+          rememberLocationResult({location,status:'temporary',
+            reason:'The location service returned no result.',retryable:true});
     } catch (error) {
       failed = true;
       console.warn('Advert location map lookup failed:', error.message);
@@ -1510,6 +1540,57 @@ async function showListingsMap(groups) {
     redrawListingMap(groups,remaining,failed);
   }
   if (!missing.length) redrawListingMap(groups,0);
+}
+async function retryMapLocations(locations) {
+  const unique=[...new Set(locations.filter(Boolean))];
+  if (!unique.length) return;
+  ++mapRequestId; // Ignore in-flight older geocoding results.
+  for(const loc of unique) {
+    const key=mapLocationKey(loc);
+    locationPoints.delete(key);
+    locationIssues.delete(key);
+    distanceFailures.delete(key);
+  }
+  for(let index=0;index<unique.length;index+=25) {
+    const chunk=unique.slice(index,index+25);
+    try {
+      const response=await api('/api/map/locations',{
+        method:'POST',body:JSON.stringify({locations:chunk,retry:true})
+      });
+      for(const row of response.locations || []) rememberLocationResult(row);
+    } catch(error) {
+      for(const location of chunk) {
+        const key=mapLocationKey(location);
+        distanceFailures.add(key);
+        locationIssues.set(key,{status:'temporary',
+          reason:'Retry failed: '+error.message,retryable:true});
+      }
+    }
+  }
+}
+async function retryUnmappedLocations(event) {
+  const button=event.target.closest('[data-map-retry]');
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const all=button.dataset.mapRetry==='all';
+  const ids=all?null:new Set(button.dataset.mapRetry.split(','));
+  const groups=lastMapGroups.filter(g=>
+    !ids || g.some(car=>ids.has(car.id)));
+  const unresolved=groups.filter(g=>{
+    const location=mapLocationForGroup(g);
+    return location && !locationPoints.get(mapLocationKey(location))?.lat;
+  });
+  const locations=unresolved.flatMap(g=>g.map(mapLocationForCar).filter(Boolean));
+  button.disabled=true;
+  button.textContent='Retrying…';
+  await retryMapLocations(locations);
+  if (resultsLayout==='map') renderResults();
+}
+async function retryModalLocation() {
+  const rows=activeModalLocationIds.map(id=>state.listings[id]).filter(Boolean);
+  await retryMapLocations(rows.map(mapLocationForCar).filter(Boolean));
+  await showCarLocation(activeModalLocationIds);
 }
 function mapCarClick(event) {
   const element = event.target.closest('[data-map-ids]');
@@ -2343,6 +2424,8 @@ $('mapModeButton').addEventListener('click', () => {
 });
 $('listingMap').addEventListener('click', mapCarClick);
 $('unmappedCars').addEventListener('click', mapCarClick);
+$('unmappedCars').addEventListener('click', retryUnmappedLocations);
+$('retryLocationMap').addEventListener('click', retryModalLocation);
 ['keywordFilter','sourceFilter','sortFilter','changesOnly'].forEach(id => $(id).addEventListener(id === 'keywordFilter'?'input':'change',renderResults));
 RESULT_FILTERS.forEach(id => $(id).addEventListener(
   id === 'resultTransmission' || id === 'resultColour' || id === 'resultBodyType' || id === 'resultDistanceMax' ? 'change' : 'input',
