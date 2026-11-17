@@ -1,3 +1,14 @@
+# DriveHub v142.33
+
+## v142.33 — Mileage-adjusted relative prices and six value labels
+
+- Replaced the 60% asking price / 40% odometer rank with a mileage-adjusted asking-price comparison. Car Search estimates how much asking prices fall per extra 10,000 miles from the relevant model, trim, similar-year and transmission cohort (median pairwise slopes, guarded against outliers).
+- Normalises comparable asking prices to their cohort's median mileage before comparing against the median asking price at that mileage.
+- Card badges now say **Amazing!**, **Great**, **Good**, **Average**, **Poor**, **Terrible** or **Not rated**, with clearer distinct styling. The tooltip explains the estimated mileage rate, cohort size and price difference from the mileage-adjusted median.
+- **Best price vs mileage** sort uses the same adjusted-price percentage difference. Cars without enough credible comparables receive no speculative label and sort by asking price, then mileage, after scored cars.
+- No scoring when there are fewer than three comparable cars, insufficient odometer spread, missing price/mileage, or no credible price-to-mileage relationship. A capped observed mileage rate prevents implausible adjustments.
+- These are asking-price comparisons within *your collected results*, not verified market valuations. Condition, service history, trim differences and other material factors are not priced in.
+
 # DriveHub v142.32
 
 ## v142.32 — Relative price-to-mileage ratings and sort
