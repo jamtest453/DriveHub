@@ -730,17 +730,18 @@ function combinedCarDetails(group, preferred=null) {
     if (owned) value = owned.value; // Explicit owner corrections take priority.
     combined[key]=value;
     let display=value;
-    if (key==='mileage' && numberRange) {
+    if (key==='mileage' && observations.length>1 && (numberRange || conflict) && !owned) {
       const values=observations.map(row=>row.value);
       display=new Intl.NumberFormat('en-GB').format(Math.min(...values)) +
-        '–' + new Intl.NumberFormat('en-GB').format(Math.max(...values)) + ' miles';
+        '–' + new Intl.NumberFormat('en-GB').format(Math.max(...values)) +
+        ' miles' + (conflict ? ' (adverts differ)' : '');
     } else if (key==='mileage' && value!==null) {
       display=new Intl.NumberFormat('en-GB').format(value)+' miles';
     } else if (key==='engine' && value!==null) display=value+' litres';
     else if (key==='bhp' && value!==null) display=value+' bhp';
     else if (key==='transmission' && value) display=value==='automatic'?'Automatic':'Manual';
     else if (key==='colour' && value) display=value[0].toUpperCase()+value.slice(1);
-    if (conflict && key!=='location' && !owned) display='Differs by advert';
+    if (conflict && key!=='location' && key!=='mileage' && !owned) display='Differs by advert';
     fields[key]={label:labels[key],value,display,observations,conflict,numberRange,
       manuallyEdited:!!owned};
   }
