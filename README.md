@@ -1,4 +1,13 @@
-# DriveHub v142.29
+# DriveHub v142.30
+
+## v142.30 — Reliable search refreshes, quicker navigation and editable results
+
+- Photo-derived exterior colour estimation is removed. Only manually entered paint or colour evidence from adverts/titles is used for display, filters and duplicate matching. Existing saved photo guesses are cleared on state load/import. Non-AI image fingerprints still support duplicate matching.
+- Any tracked advert, saved or unsaved, can now be edited directly from its result card or detail view. The edited car stays in its current search and does not become a Saved car unless explicitly saved. Manual corrections survive later scans.
+- On the Searches page, a targeted Refresh now button shows Refreshing and the active provider until the server scan finishes. Other refresh buttons are disabled during a scan and update automatically on completion.
+- Source scans have bounded timeouts and a Chromium close failure can no longer leave a refresh permanently busy. Individual source errors appear in the search's report while remaining sources continue.
+- Navigation caches state-derived grouping, avoids rebuilding the global header on each scan poll and defers location-based card repainting. Background photo fingerprints are persisted without publishing a new full-state revision for every single thumbnail.
+- Existing searches, bookmarks, scan history and notes remain intact.
 
 ## v142.29 — Searches dashboard and inline listing distance
 
