@@ -1,3 +1,14 @@
+# DriveHub v142.36
+
+## v142.36 — Evidence-preserving map locations and transparent retries
+
+- Car Search continues to display clean town/area names on listing cards and map markers, while geocoding now retains original advertised full postcodes, county qualifiers and distances (e.g. Hayes 157 miles). **Full postcodes win over vague town names**; an invalid postcode can fall back to an identifiable town. If a merged car has several independently advertised locations, use the best successfully mapped source, preferring a full postcode.
+- Map matching keeps Ordnance Survey/UK postcode safety limits, but also accepts an otherwise unique, high-confidence spelling or punctuation variation. Truly ambiguous place names remain unmapped rather than guessing a vehicle location.
+- Unmapped cars show actionable reasons such as missing location, unsupported text, ambiguous place names, unmatched places, invalid postcodes or temporary service failures, instead of one generic failure category.
+- Added **Retry** per unresolved listing, **Retry unresolved cars** on the map, and **Retry location lookup** on the individual map dialog. Explicit retries bypass negative caches, and temporary upstream failures are not cached server-side. Late background failures no longer overwrite successful retry coordinates.
+- Backend map API adds backwards-compatible status, reason and retryable fields plus an optional retry flag. The map remains approximate; no GPS addresses or private data are inferred.
+- Added regression tests for postcode-first lookup, county/mileage disambiguation, conservative near-match behaviour, retry and map diagnostics. No existing searches or notes were deleted.
+
 # DriveHub v142.35
 
 ## v142.35 — Reliable location map, body-style filters and merged mileage ratings
