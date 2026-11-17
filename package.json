@@ -12,7 +12,7 @@
     "test:shared": "node shared/tests/chrome.test.mjs",
     "test:static": "npm run build:static && node scripts/verify-static-launcher.mjs",
     "test:navigation": "node tests/navigation-load.test.mjs",
-    "test:car-search": "node tools/car-search/tests/integration.test.mjs && node tools/car-search/tests/searches-view.test.mjs && node tools/car-search/tests/price-mileage.test.mjs && node tools/car-search/tests/body-type.test.mjs && node tools/car-search/tests/recently-updated.test.mjs && node tools/car-search/legacy/tests/test_keyword_modes.js && node tools/car-search/legacy/tests/test_negative_keywords.js",
+    "test:car-search": "node tools/car-search/tests/integration.test.mjs && node tools/car-search/tests/searches-view.test.mjs && node tools/car-search/tests/price-mileage.test.mjs && node tools/car-search/tests/body-type.test.mjs && node tools/car-search/tests/map-reliability.test.mjs && node tools/car-search/tests/recently-updated.test.mjs && node tools/car-search/legacy/tests/test_keyword_modes.js && node tools/car-search/legacy/tests/test_negative_keywords.js",
     "build:android-web": "node scripts/build-android-web.mjs",
     "test:android": "node tests/android-update.test.mjs",
     "promote:android-ota": "node scripts/promote-android-ota.mjs"
