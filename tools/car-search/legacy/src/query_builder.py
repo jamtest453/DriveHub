@@ -176,7 +176,7 @@ def generate_links(filters, sources=SOURCES, search_name=None):
                 elif identity.keywords or identity.model:
                     # An unrecognised model stays a keyword, with the make
                     # restricted by its public maker page.
-                    keywords = identity.keywords or combined.split(" ", 1)[-1]
+                    keywords = identity.keywords or identity.remainder
                     url += "?" + urlencode({"keywords": keywords})
                     note = "PistonHeads make page with keyword fallback. Verify local criteria against the advert."
                 else:
