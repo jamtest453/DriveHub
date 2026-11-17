@@ -237,19 +237,5 @@ h1 { font-size: clamp(33px,3.5vw,48px); line-height: 1.05; }
   .saved-search-actions .button{white-space:normal}
 }
 
-/* v142.30: clear per-search scanning feedback without moving the row layout. */
+/* v142.31: active refresh is indicated only on its button and row. */
 .saved-search-row.is-refreshing{border-color:#82b9a8;background:#f8fcfa}
-.saved-search-progress{
-  color:var(--dh-green-deep);font-size:11px;font-weight:800;
-  min-width:0;max-width:180px;line-height:1.35;
-  overflow:hidden;text-overflow:ellipsis;
-}
-.saved-search-progress:empty{display:none}
-.saved-search-row.is-refreshing .saved-search-progress::before{
-  content:'';display:inline-block;width:10px;height:10px;margin-right:7px;
-  border:2px solid #a4cdbd;border-top-color:#186549;
-  border-radius:50%;vertical-align:-2px;
-  animation:drivehubSearchSpin .85s linear infinite;
-}
-@keyframes drivehubSearchSpin{to{transform:rotate(360deg)}}
-@media(max-width:700px){.saved-search-progress:not(:empty){grid-column:1/-1}}

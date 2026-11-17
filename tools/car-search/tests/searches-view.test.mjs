@@ -62,7 +62,10 @@ context.scanSearchIds=['s1'];
 searches.render();
 assert.match(searchesHtml,/is-refreshing/);
 assert.match(searchesHtml,/↻ Refreshing…/);
-assert.match(searchesHtml,/data-refresh-status="s1" role="status"/);
+assert.equal((searchesHtml.match(/Refreshing…/g)||[]).length,1,
+  'only the refresh button shows the active state, not an extra status line');
+assert.doesNotMatch(searchesHtml,/saved-search-progress|data-refresh-status/);
+assert.doesNotMatch(css,/\.saved-search-progress/);
 context.scanBusy=false;
 context.scanSearchIds=[];
 searches.render();
@@ -92,11 +95,33 @@ assert.match(navHtml,/data-view="overview"/);
 assert.match(navHtml,/data-view="saved"/);
 assert.doesNotMatch(navHtml,/data-view="search:s1"/);
 
+// Map location lookups use only the actual place, even when imported adverts
+// carry display-only mileage or contradictory-provider indicators.
+const placeFns=vm.runInNewContext(section('function cleanAdvertLocation(','function milesForGroup(')+
+  '\n({cleanAdvertLocation,locationForCar})');
+assert.equal(placeFns.cleanAdvertLocation('Hayes (157 miles) · multiple locations'),'Hayes');
+assert.equal(placeFns.cleanAdvertLocation('Hayes (multiple locations)'),'Hayes');
+assert.equal(placeFns.cleanAdvertLocation('Hayes, multiple locations'),'Hayes');
+assert.equal(placeFns.cleanAdvertLocation('Hayes (157 mi)'),'Hayes');
+assert.equal(placeFns.cleanAdvertLocation('Multiple locations'),'');
+const mapFns=vm.runInNewContext(section('function mapLocationForGroup(','async function showCarLocation(')+
+  '\n({mapLocationForGroup,mapLocationKey})',{
+    locationForCar:placeFns.locationForCar,
+    cleanAdvertLocation:placeFns.cleanAdvertLocation,locationPoints:new Map()
+  });
+assert.equal(mapFns.mapLocationKey('Hayes (157 miles) · multiple locations'),'hayes');
+assert.equal(mapFns.mapLocationForGroup([
+  {location:'multiple locations'},{location:'Hayes (157 miles) · multiple locations'}
+]),'Hayes');
+assert.equal(mapFns.mapLocationForGroup([
+  {location:'Manchester (21 miles)'},{location:'SK12 2NL'}
+]),'SK12 2NL');
+
 // Distance stays inside the clickable location, in brackets, with no separate chip.
 const car={
-  id:'a',title:'BMW M2',year:2017,mileage:52000,location:'Hayes (150 miles)',
+  id:'a',title:'BMW M2',year:2017,mileage:52000,location:'Hayes (150 miles) · multiple locations',
   image:'',price:24500,site:'autotrader',
-  combinedMeta:{fields:{mileage:{display:'52,000 miles'},location:{conflict:false}}}
+  combinedMeta:{fields:{mileage:{display:'52,000 miles'},location:{conflict:true}}}
 };
 const cardCtx={
   Set,Intl,Math,SITE_NAMES:{autotrader:'Auto Trader'},
@@ -106,6 +131,7 @@ const cardCtx={
   imageUrl:()=>'',linkUrl:()=>'',getSearch:()=>null,
   hasSeparatedMatches:()=>false,when:()=> '17 Nov',
   fmtPrice:()=> '£24,500',esc:value=>String(value),
+  locationForCar:placeFns.locationForCar,
   state:{manualDuplicates:{}},mergeFrom:null
 };
 const renderCard=vm.runInNewContext(section('function renderCard(','function openCarDetails(')+'\nrenderCard',cardCtx);
@@ -115,4 +141,6 @@ const result=renderCard([{id:'a',site:'autotrader',price:24500}],{
 assert.match(result,/Hayes <span class="car-location-distance">\(157 miles\)<\/span>/);
 assert.doesNotMatch(result,/≈157 mi/);
 assert.match(result,/data-action="location-map"/);
+assert.doesNotMatch(result,/multiple locations/i,
+  'provider conflict hints never contaminate listing location or map text');
 console.log('Saved Searches page, deduplicated updates and inline distance checks passed');

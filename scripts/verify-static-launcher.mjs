@@ -22,7 +22,7 @@ for(const name of ['garage','valuation','roads']){
   const tool=Buffer.from(payload[name]||'','base64').toString('utf8');
   assert.match(tool,/drivehub-desktop-nav/,'embedded tools include the shared desktop application bar');
   assert.match(tool,/beginActivity/,'embedded tools include shared activity feedback');
-  assert.match(tool,/drivehubChrome==='14230'/,'embedded tools include the v142.30 shared shell');
+  assert.match(tool,/drivehubChrome==='14231'/,'embedded tools include the v142.31 shared shell');
 }
 const garage=Buffer.from(payload.garage,'base64').toString('utf8');
 const valuation=Buffer.from(payload.valuation,'base64').toString('utf8');
