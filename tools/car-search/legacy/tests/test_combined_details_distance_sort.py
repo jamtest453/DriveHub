@@ -111,6 +111,7 @@ let resolutions=0;
 const ensureDistanceLocations=()=>{resolutions++};
 const statusSets=()=>({newIds:new Set(),changedIds:new Set()});
 const grouped=x=>x.map(row=>[row]);
+const baseGroupsForView=grouped;
 const matchesResultFilters=()=>true;
 const groupMatchesColour=()=>true,groupMatchesDistance=()=>true;
 const combinedCarDetails=g=>g[0];
