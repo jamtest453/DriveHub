@@ -83,7 +83,7 @@ try{
   data=await r.json();
   assert.equal(data.error,'no_new_version_available','current web bundle is not re-downloaded');
 
-  r=await update({platform:'android',version_code:'1',version_name:'142.27.0'});
+  r=await update({platform:'android',version_code:'1',version_name:'142.28.0'});
   data=await r.json();
   assert.equal(data.error,'no_new_version_available','a device on a newer web bundle is never downgraded');
 
