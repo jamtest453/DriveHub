@@ -1430,13 +1430,11 @@ async function showListingsMap(groups) {
   if (!initListingMap()) return;
   requestAnimationFrame(() => listingMap.invalidateSize());
   const signature = JSON.stringify(groups.map(g => g.map(car => [car.id,car.location,car.price])));
-  if (signature === mapSignature) {
-    // Repaint even if the data signature is unchanged: geocoding may have
-    // completed after a previous render or the map was hidden/resized.
-    redrawListingMap(groups,0);
-    requestAnimationFrame(()=>listingMap.invalidateSize());
-    return;
-  }
+  // A previous map request can be interrupted when background distance
+  // geocoding causes a re-render. The listing signature may still be
+  // unchanged even though some positions have never been resolved.
+  // Always repaint AND query any still-missing places, even on same-signature
+  // refreshes; cached coordinates prevent needless calls.
   mapSignature = signature;
   // Check locations from every source advert in a grouped car. If one
   // website only says "Ripley", another may have a precise postcode.
@@ -1460,7 +1458,8 @@ async function showListingsMap(groups) {
       failed = true;
       console.warn('Advert location map lookup failed:', error.message);
       // Retain all affected cars as unlocated rather than inventing pins.
-      for (const loc of chunk) locationPoints.set(mapLocationKey(loc), null);
+      // Do not cache a transient network failure as a permanent missing
+      // location: switching map views must be able to retry it.
     }
     if (ticket !== mapRequestId || resultsLayout !== 'map') return;
     const remaining = missing.slice(start+25).filter(location => !locationPoints.has(mapLocationKey(location))).length;
