@@ -30,8 +30,8 @@ def test_autotrader_nationwide_search_and_public_browse_fallback(monkeypatch):
     params = parse_qs(urlsplit(selected["url"]).query)
     assert params["postcode"] == ["M1 1AE"]
     assert params["radius"] == ["1500"]
-    assert params["keywords"] == ["BMW M2"]
-    assert "make" not in params and "model" not in params
+    assert params["make"] == ["BMW"] and params["model"] == ["M2"]
+    assert "keywords" not in params
     assert params["price-to"] == ["27000"]
     assert "browseUrl" not in selected
     monkeypatch.setenv("AUTOTRADER_POSTCODE", "SW1A 1AA")
@@ -98,26 +98,48 @@ async def test_autotrader_fallback_retains_incomplete_flag_and_local_advert():
     assert "public model listings" in found["caveat"].lower()
 
 
-def test_pistonheads_and_autotrader_use_keyword_field_for_any_model():
+def test_autotrader_and_pistonheads_use_make_and_known_model():
     from urllib.parse import parse_qs, urlsplit
-    for name in ("BMW M2", "Lotus Evora", "Porsche 997", "Jaguar XKR",
-                 "Aston Martin Vantage", "Mercedes AMG GT"):
-        filters = validate_filters({"keywords": "manual"})
-        links = generate_links(filters, ["autotrader", "pistonheads"], name)
-        for link in links:
-            query = parse_qs(urlsplit(link["url"]).query)
-            assert query["keywords"] == [name]  # Preferred term never restricts provider search
-            assert "make" not in query and "model" not in query
-            assert "make-id" not in query and "model-id" not in query
-            assert "browseUrl" not in link
+    cases = [
+        ("BMW M2", "BMW", "M2", "/buy/bmw/m2"),
+        ("Lotus Evora", "Lotus", "Evora", "/buy/lotus/evora"),
+        ("Porsche 997 C4S", "Porsche", "911", "/buy/porsche/911-carrera-997"),
+        ("Porsche 996 Carrera 4S", "Porsche", "911", "/buy/porsche/911-carrera-996"),
+        ("Ford Mustang GT", "Ford", "Mustang", "/buy/ford/mustang"),
+    ]
+    for name, make, model, path in cases:
+        links = generate_links(validate_filters({"keywords": "manual"}), ["autotrader", "pistonheads"], name)
+        at = parse_qs(urlsplit(links[0]["url"]).query)
+        assert at["make"] == [make] and at["model"] == [model]
+        assert "keywords" not in at  # Preferred words never narrow provider results
+        assert urlsplit(links[1]["url"]).path == path
+        assert "make-id" not in links[1]["url"] and "model-id" not in links[1]["url"]
+        assert "browseUrl" not in links[1]
+
     old = {"name":"BMW M2", "filters":validate_filters({"keywords": ""}),
            "sources":["pistonheads"], "links":[{"site":"pistonheads","id":"source-ph",
            "url":"https://www.pistonheads.com/buy/search?make-id=17&model-id=2940"}]}
     assert server.regenerate_search_links(old)
     assert old["links"][0]["id"] == "source-ph"
-    assert "keywords=BMW+M2" in old["links"][0]["url"]
-    assert "make-id" not in old["links"][0]["url"]
+    assert old["links"][0]["url"].endswith("/buy/bmw/m2")
     assert not server.regenerate_search_links(old)
+
+
+def test_provider_model_unknown_falls_back_to_keywords():
+    from urllib.parse import parse_qs, urlsplit
+    links = generate_links(validate_filters({"keywords": "manual"}),
+                           ["autotrader", "pistonheads"], "Porsche Mystery Edition")
+    at = parse_qs(urlsplit(links[0]["url"]).query)
+    ph = urlsplit(links[1]["url"])
+    assert at["make"] == ["Porsche"]
+    assert "model" not in at
+    assert at["keywords"] == ["Mystery Edition"]
+    assert ph.path == "/buy/porsche"
+    assert parse_qs(ph.query)["keywords"] == ["Mystery Edition"]
+    unknown = generate_links(validate_filters({"keywords": ""}),
+                             ["autotrader", "pistonheads"], "Unlistedbrand Sports Coupe")
+    assert parse_qs(urlsplit(unknown[0]["url"]).query)["keywords"] == ["Unlistedbrand Sports Coupe"]
+    assert parse_qs(urlsplit(unknown[1]["url"]).query)["keywords"] == ["Unlistedbrand Sports Coupe"]
 
 
 @pytest.mark.asyncio
@@ -159,11 +181,11 @@ def test_vehicle_name_is_required_and_legacy_extra_keywords_are_preferred():
     links = generate_links(f, ["autotrader", "pistonheads", "facebook", "ebay"], "BMW M2")
     from urllib.parse import urlsplit, parse_qs
     queries = {item["site"]: parse_qs(urlsplit(item["url"]).query) for item in links}
-    assert queries["autotrader"]["keywords"] == ["BMW M2"]
-    assert "make" not in queries["autotrader"]
-    assert "model" not in queries["autotrader"]
+    assert queries["autotrader"]["make"] == ["BMW"]
+    assert queries["autotrader"]["model"] == ["M2"]
+    assert "keywords" not in queries["autotrader"]
     assert "advertising-location" not in queries["autotrader"]
-    assert queries["pistonheads"]["keywords"] == ["BMW M2"]
+    assert links[1]["url"].endswith("/buy/bmw/m2")
     assert "make-id" not in queries["pistonheads"]
     assert "model-id" not in queries["pistonheads"]
     assert queries["facebook"]["query"] == ["BMW M2"]
@@ -172,8 +194,10 @@ def test_vehicle_name_is_required_and_legacy_extra_keywords_are_preferred():
     extra = validate_filters({"keywords": "manual"})
     with_extra = generate_links(extra, ["autotrader", "pistonheads", "facebook", "ebay"], "BMW M2")
     q = {item["site"]: parse_qs(urlsplit(item["url"]).query) for item in with_extra}
-    assert q["autotrader"]["keywords"] == ["BMW M2"]
-    assert q["pistonheads"]["keywords"] == ["BMW M2"]
+    assert q["autotrader"]["make"] == ["BMW"]
+    assert q["autotrader"]["model"] == ["M2"]
+    assert "keywords" not in q["autotrader"]
+    assert with_extra[1]["url"].endswith("/buy/bmw/m2")
     assert q["facebook"]["query"] == ["BMW M2"]
     assert q["ebay"]["_nkw"] == ["BMW M2"]
     assert extra["preferredKeywords"] == "manual"
@@ -207,9 +231,9 @@ def test_regenerate_existing_bad_autotrader_url_preserves_snapshot_identity():
     }
     assert server.regenerate_search_links(search) is True
     assert search["links"][0]["id"] == "existing-link"
-    assert "keywords=BMW+M2" in search["links"][0]["url"]
-    assert "make=BMW" not in search["links"][0]["url"]
-    assert "model=M2" not in search["links"][0]["url"]
+    assert "make=BMW" in search["links"][0]["url"]
+    assert "model=M2" in search["links"][0]["url"]
+    assert "keywords=" not in search["links"][0]["url"]
     assert server.regenerate_search_links(search) is False
 
 
@@ -225,9 +249,9 @@ def test_searches_are_generated_without_user_supplied_urls():
     assert "_nkw=BMW+M2" in links[0]["url"] and "_sacat=9801" in links[0]["url"]
     assert "query=BMW+M2" in links[1]["url"] and "maxPrice=25000" in links[1]["url"]
     assert "price-to=25000" in links[2]["url"]
-    assert "keywords=BMW+M2" in links[2]["url"]
-    assert "keywords=BMW+M2" in links[3]["url"]
-    assert "make-id" not in links[3]["url"] and "make=BMW" not in links[2]["url"]
+    assert "make=BMW" in links[2]["url"] and "model=M2" in links[2]["url"]
+    assert links[3]["url"].endswith("/buy/bmw/m2")
+    assert "make-id" not in links[3]["url"]
     with pytest.raises(ValueError):
         generate_links(filters(), ["evil"])
 
