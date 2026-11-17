@@ -11,12 +11,54 @@ from src.location_map import (LocationResolver, clean_location, place_request,
 
 def test_uk_location_parser_uses_advert_locations_only():
     assert place_request("Located in Bristol, South West") == ("place", "Bristol", "south west")
-    assert place_request("Manchester, M2") == ("outcode", "M2", "")
+    assert place_request("Manchester, M2") == ("place", "Manchester", "")
     assert place_request("SW1A 1AA") == ("postcode", "SW1A1AA", "")
     assert place_request("London") == ("place", "London", "")
     assert place_request("Location not provided") is None
     assert place_request("www.evil.example/path") is None
     assert clean_location(None) == ""
+
+
+def test_map_query_removes_location_suffixes_and_partial_postcodes():
+    cases = {
+        "Bristol, BS1 1AA": ("place", "Bristol", ""),
+        "Manchester M2 (28 miles)": ("place", "Manchester", ""),
+        "Hayes · 157 miles away": ("place", "Hayes", ""),
+        "High Lane, SK12": ("place", "High Lane", ""),
+        "SK12 2NL, High Lane": ("place", "High Lane", ""),
+        "Newport, Isle of Wight, PO30": ("place", "Newport", "isle of wight"),
+        "Hayes (multiple locations)": ("place", "Hayes", ""),
+    }
+    for advert, expected in cases.items():
+        assert place_request(advert) == expected, advert
+    # When only a full postcode is supplied, preserve precise mapping.
+    assert place_request("SK12 2NL") == ("postcode", "SK122NL", "")
+    assert place_request("SK12") == ("outcode", "SK12", "")
+
+
+@pytest.mark.asyncio
+async def test_postcode_map_marker_uses_place_name_not_postcode():
+    resolver = LocationResolver()
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"result": {
+                "latitude": 53.3639, "longitude": -2.0678,
+                "postcode": "SK12 2NL", "parish": "High Lane",
+                "admin_ward": "Marple South"
+            }}
+
+    class FakeClient:
+        async def get(self, url, params=None):
+            return FakeResponse()
+
+    point, definitive = await resolver._lookup(FakeClient(),
+                                                ("postcode", "SK122NL", ""))
+    assert definitive
+    assert point["label"] == "High Lane"
+    assert point["precision"] == "Postcode centroid (approx.)"
 
 
 def test_autotrader_display_distance_is_not_part_of_town_name():
@@ -83,7 +125,7 @@ def test_hayes_mileage_disambiguates_across_settlement_types():
     assert point and point["lat"] == 51.508
     assert "inferred from advertised distance" in point["precision"]
     assert find_place(alternatives,"Hayes","") is None
-    assert cache_key("Hayes (157 miles)").endswith("|placev2")
+    assert cache_key("Hayes (157 miles)").endswith("|placev3")
 
 
 def test_exact_place_centres_and_ambiguous_locations():
@@ -142,7 +184,7 @@ async def test_map_only_lookup_writes_cache_and_does_not_repeat_requests(tmp_pat
     assert len(called) == 1
     assert (tmp_path / "location-map-cache.json").exists()
     stored = json.loads((tmp_path / "location-map-cache.json").read_text())
-    assert "manchester" in stored
+    assert "manchester|placev3" in stored
     await resolver.resolve(["Manchester"], tmp_path)
     assert len(called) == 1
 
