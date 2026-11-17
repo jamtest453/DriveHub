@@ -869,6 +869,98 @@ function matchingColourAdvert(group) {
   return group.find(car => matchesResultFilters(car) && exteriorColour(car)===selected) ||
     group.find(matchesResultFilters) || group[0];
 }
+// Relative price-to-mileage comparison. Comparing asking price divided by
+// mileage would perversely reward high-mileage cars, so rank each separately.
+// Never compare materially different models, generations, trims or body styles.
+function priceMileageVariant(title) {
+  const text=String(title || '').toLowerCase();
+  const tokens=[
+    /\b(?:996|997|991|992)\b/.exec(text)?.[0] || '',
+    /\bcompetition\b|\bcomp\b/.test(text) ? 'competition' : '',
+    /\b(?:cs|gts|gt3|gt4)\b/.exec(text)?.[0] || '',
+    /\b(?:c4s|4s|c2s|2s)\b/.exec(text)?.[0] || '',
+    /\bv8\b|\b5[.]0\b/.test(text) ? 'v8' : '',
+    /\bv6\b|\b3[.]0\b/.test(text) ? 'v6' : '',
+    /\b(?:convertible|cabriolet|cabrio|roadster|drophead)\b/.test(text) ? 'open' : '',
+    /\b(?:supercharged)\b/.test(text) ? 'supercharged' : ''
+  ];
+  return tokens.filter(Boolean).join('/');
+}
+function priceMileageObservation(group) {
+  const combined=combinedCarDetails(group);
+  const priced=group.find(car=>car.manualFields?.includes('price') && Number(car.price)>0) ||
+    [...group].filter(car=>Number(car.price)>0 && matchesResultFilters(car))
+      .sort((a,b)=>Number(a.price)-Number(b.price))[0] ||
+    [...group].filter(car=>Number(car.price)>0)
+      .sort((a,b)=>Number(a.price)-Number(b.price))[0];
+  const price=Number(priced?.price) || null;
+  const mileage=vehicleMileage(combined);
+  const year=Number(combined?.year);
+  const identity=vehicleIdentity(combined?.title);
+  const family=identity ? identity.make+'/'+identity.model+'/'+priceMileageVariant(combined.title) : null;
+  // Sorting fallback when peer data is thin: higher mileage always increases
+  // the effective cost, unlike the misleading price / odometer ratio.
+  const adjustedCost=price!==null && mileage!==null ?
+    price*(1+mileage/100000) : Infinity;
+  return {id:group[0]?.id,price,mileage,year,family,
+    transmission:effectiveTransmission(combined),adjustedCost};
+}
+function priceMileagePercentile(value, peers, field) {
+  // Ties share the midpoint, so identical prices/odometer readings do not
+  // artificially give one advert a better rating.
+  const lower=peers.filter(peer=>peer[field]<value).length;
+  const equal=peers.filter(peer=>peer[field]===value).length;
+  return peers.length>1 ? (lower+(equal-1)/2)/(peers.length-1) : .5;
+}
+function priceMileageRatings(groups) {
+  const rows=groups.map(priceMileageObservation);
+  const cohorts=new Map();
+  for(const row of rows) {
+    if (!row.family || !Number.isInteger(row.year) || row.year<1950 ||
+        !Number.isFinite(row.adjustedCost)) continue;
+    if(!cohorts.has(row.family))cohorts.set(row.family,[]);
+    cohorts.get(row.family).push(row);
+  }
+  const rated=new Map();
+  for(const row of rows) {
+    const peers=(cohorts.get(row.family) || []).filter(peer=>
+      Math.abs(peer.year-row.year)<=1 &&
+      (!row.transmission || !peer.transmission || row.transmission===peer.transmission));
+    const sufficient=peers.length>=3 && Number.isFinite(row.adjustedCost);
+    const priceRank=sufficient ? priceMileagePercentile(row.price,peers,'price') : null;
+    const milesRank=sufficient ? priceMileagePercentile(row.mileage,peers,'mileage') : null;
+    const combinedRank=sufficient ? .6*priceRank+.4*milesRank : null;
+    const tier=!sufficient ? 'unrated' : combinedRank<=.18 ? 'great' :
+      combinedRank<=.38 ? 'good' : combinedRank<=.63 ? 'fair' :
+      combinedRank<=.82 ? 'high' : 'poor';
+    const label={
+      great:'Great price',good:'Good price',fair:'Fair price',
+      high:'High price',poor:'Poor price',unrated:'Not rated'
+    }[tier];
+    const reason=row.price===null ? 'Asking price is unknown.' :
+      row.mileage===null ? 'Vehicle mileage is unknown or unreliable.' :
+      !row.family || !Number.isInteger(row.year) ?
+        'Model or year is not reliable enough for a comparison.' :
+      !sufficient ? 'Need at least 3 comparable cars of a similar year, model and trim.' :
+      'Relative to '+peers.length+' comparable cars currently displayed (similar model, trim and year). Asking price counts 60%, mileage 40%. Not a market valuation.';
+    rated.set(row.id,{tier,label,score:combinedRank===null?null:1-combinedRank,
+      peers:peers.length,adjustedCost:row.adjustedCost,reason});
+  }
+  return rated;
+}
+function comparePriceMileageGroups(a,b,ratings) {
+  const left=ratings.get(a[0]?.id),right=ratings.get(b[0]?.id);
+  // Comparisons backed by similar vehicles precede unscored cars.
+  const scoreA=left?.score ?? null,scoreB=right?.score ?? null;
+  if(scoreA!==null && scoreB===null)return -1;
+  if(scoreB!==null && scoreA===null)return 1;
+  if(scoreA!==null && scoreB!==null && scoreA!==scoreB)
+    return scoreB-scoreA;
+  // With fewer than three peers, show no market-sounding badge, but keep
+  // the sort useful when only one or two cars meet the search.
+  return (left?.adjustedCost ?? Infinity)-(right?.adjustedCost ?? Infinity);
+}
+
 function renderResults() {
   if (view === 'searches') return;
   const search = getSearch();
@@ -887,7 +979,12 @@ function renderResults() {
     (g.some(matchesResultFilters) || matchesResultFilters(combinedCarDetails(g))) &&
     groupMatchesColour(g) && groupMatchesDistance(g));
   const sort = $('sortFilter').value;
+  const valueRatings=priceMileageRatings(groups);
   groups.sort((a,b) => {
+    if (sort==='priceMileage') {
+      const value=comparePriceMileageGroups(a,b,valueRatings);
+      if (value) return value;
+    }
     if (sort==='preferred' && search) {
       const difference = searchPreferredScore(b, search) - searchPreferredScore(a, search);
       if (difference) return difference;
@@ -913,6 +1010,7 @@ function renderResults() {
   $('resultsSubtitle').textContent = `${groups.length} ${groups.length === 1 ? 'car' : 'cars'} shown · ${lists.length} source listings · same-car matches grouped` +
     (sort === 'preferred' && search && keywordTerms(preferredKeywords(search)).length ?
       ' · preferred keyword matches first' : '') +
+    (sort === 'priceMileage' ? ' · price and mileage compared with similar cars' : '') +
     (wantsDistanceCoordinates() ? (distanceLookupBusy ? ' · locating adverts…' :
       ' · straight-line distance from High Lane (unknown locations last)') : '');
   $('listModeButton').classList.toggle('active', resultsLayout === 'list');
@@ -938,7 +1036,7 @@ function renderResults() {
     $('listingGrid').innerHTML = `<div class="empty-state"><div class="empty-illustration">${view === 'saved'?'♡':'◌'}</div><h2>${view === 'saved' ? 'Your shortlist is empty.' : keyword || changesOnly || site !== 'all' ? 'No matches for this filter.' : 'No listings recorded yet.'}</h2><p>${view === 'saved' ? 'Save any listing from a search, or paste an individual advert URL to add one yourself.' : keyword || changesOnly || site !== 'all' ? 'Try clearing a filter or changing the source.' : 'Refresh your search to establish a baseline and discover the cars currently shown.'}</p>${view === 'saved' ? '<button class="button dark" data-action="add-manual">＋ Add a car by URL</button>' : ''}${view !== 'saved' && !keyword && !changesOnly ? `<button class="button dark" data-action="${search?'refresh':'refresh-all'}" ${search?`data-id="${search.id}"`:''} ${scanBusy?'disabled':''}>↻ Refresh now</button>`:''}</div>`;
     return;
   }
-  $('listingGrid').innerHTML = groups.map(g => renderCard(g, statuses)).join('');
+  $('listingGrid').innerHTML = groups.map(g => renderCard(g,statuses,false,valueRatings.get(g[0].id))).join('');
   $('listingGrid').querySelectorAll('img').forEach(img => img.addEventListener('error', () => {
     img.style.display='none'; img.parentElement.classList.add('image-failed');
   }, { once:true }));
@@ -1170,7 +1268,7 @@ function renderHiddenResults(search,statuses) {
     groups.map(group=>renderCard(group,statuses,true)).join('') :
     '<p class="helper hidden-empty">No cars hidden in this search.</p>';
 }
-function renderCard(g, statuses, inHiddenSection=false) {
+function renderCard(g, statuses, inHiddenSection=false, valueRating=null) {
   // Make one comprehensive, read-only vehicle view from the source adverts.
   const car = combinedCarDetails(g, matchingColourAdvert(g));
   const ids = g.map(x => x.id);
@@ -1198,6 +1296,7 @@ function renderCard(g, statuses, inHiddenSection=false) {
     car.bhp && !inTitle(`${car.bhp} bhp`) ? `<span>${esc(car.bhp)} bhp</span>` : '',
     transmission && !inTitle(transmission) && !inTitle('DCT') && !inTitle('DSG') && !inTitle('PDK') ? `<span>${transmission==='automatic'?'Automatic':'Manual'}</span>` : ''
   ].filter(Boolean).join('');
+  const valueBadge=valueRating ? `<span class="price-value-indicator price-value-${valueRating.tier}" title="${esc(valueRating.reason)}" aria-label="${esc(valueRating.label + '. ' + valueRating.reason)}">${esc(valueRating.label)}</span>` : '';
   const photo=bestPhotoMatch(g);
   const photoBadge=photo ? `<span class="photo-duplicate-label" title="Near-identical advert photo: perceptual image similarity ${photo.score}%. No AI used.">▣ ${photo.score}% photo match</span>` : '';
   const mergeAction = activeMerge ? (ids.includes(mergeFrom) ? `<button class="card-tool" data-action="cancel-merge">Cancel merge</button>` : `<button class="card-tool merge-target" data-action="merge-here" data-id="${esc(car.id)}">Merge here</button>`) : `<button class="card-tool" data-action="merge" data-id="${esc(car.id)}" title="Manually combine duplicate adverts">Merge</button>`;
@@ -1206,7 +1305,7 @@ function renderCard(g, statuses, inHiddenSection=false) {
     <div class="listing-info"><div class="listing-head"><div class="listing-sites">${g.length > 1 ? `<span class="crosslist">${g.length} adverts</span>` : ''}${photoBadge}</div></div>
     <h3 title="${esc(car.title)}">${esc(car.title)}</h3><div class="car-specs">${cardSpecs}</div>
         ${saved && g.some(x => ['queued','running'].includes(x.enrichStatus)) ? '<span class="enrich-indicator">Checking advert details…</span>' : ''}
-    <div class="car-price"><strong>${fmtPrice(cheapest.price)}</strong>${changed && diff!==0 ? `<span class="price-move ${diff<0?'drop':'rise'}">${diff<0?'↓':'↑'} ${fmtPrice(Math.abs(diff))} ${diff<0?'drop':'rise'}</span>` : ''}</div>
+    <div class="car-price"><strong>${fmtPrice(cheapest.price)}</strong>${valueBadge}${changed && diff!==0 ? `<span class="price-move ${diff<0?'drop':'rise'}">${diff<0?'↓':'↑'} ${fmtPrice(Math.abs(diff))} ${diff<0?'drop':'rise'}</span>` : ''}</div>
     ${note ? `<div class="note-preview">✎ ${esc(note.length > 115 ? note.slice(0,115)+'…' : note)}</div>` : ''}
     <div class="listing-links" aria-label="Adverts available for this car">${g.map(item => `<button type="button" class="source-preview" data-action="car-source" data-ids="${esc(ids.join(','))}" data-id="${esc(item.id)}" title="Preview ${esc(SITE_NAMES[item.site] || item.site)} advert in this page">${esc(SITE_NAMES[item.site] || item.site)}${g.length > 1 && item.price ? ' · '+fmtPrice(item.price) : ''}</button>`).join('')}</div>
     <div class="card-footer">${getSearch()? `<button class="card-tool" data-action="hide-listing" data-hidden="${inHiddenSection?'true':'false'}" data-search-id="${esc(getSearch().id)}" data-ids="${esc(ids.join(','))}">${inHiddenSection?'↶ Restore':'◌ Hide'}</button>` : ''}<button class="card-tool" data-action="note" data-ids="${esc(ids.join(','))}">✎ ${note?'Edit note':'Add note'}</button>${saved ? `<button class="card-tool" data-action="share-car" data-ids="${esc(ids.join(','))}">↗ Share</button>` : ''}<button class="card-tool" data-action="edit-car" data-id="${esc(g.find(x=>x.saved)?.id || car.id)}">✎ Edit details</button>${mergeAction}${g.length > 1 ? `<button class="card-tool" data-action="separate" data-ids="${esc(ids.join(','))}" title="These are different cars. Keep their adverts separate in future.">Not same car</button>` : ''}${g.some(x => state.manualDuplicates[x.id]) ? `<button class="card-tool" data-action="unmerge" data-ids="${esc(ids.join(','))}">Unmerge</button>` : ''}${hasSeparatedMatches(ids) ? `<button class="card-tool" data-action="allow-match" data-ids="${esc(ids.join(','))}" title="Remove your automatic duplicate exclusions for this advert">Allow matching</button>` : ''}<span class="first-seen">Found ${when(car.firstSeen)}</span></div>

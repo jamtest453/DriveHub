@@ -11,12 +11,12 @@
       if(window.parent!==window)return;
       if(!document.querySelector('link[data-drivehub-header-style]')){
         const style=document.createElement('link');
-        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14231';
+        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14232';
         style.dataset.drivehubHeaderStyle='true';document.head.appendChild(style);
       }
     }
-    if(document.documentElement.dataset.drivehubChrome==='14231')return;
-    document.documentElement.dataset.drivehubChrome='14231';
+    if(document.documentElement.dataset.drivehubChrome==='14232')return;
+    document.documentElement.dataset.drivehubChrome='14232';
 
     let sourceNav=null;
     let sourceObserver=null;
