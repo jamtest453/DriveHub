@@ -30,7 +30,7 @@ const state={
 };
 let searchesHtml='';
 const context={
-  state,scanBusy:false,Date,Intl,Set,
+  state,scanBusy:false,scanSearchIds:[],Date,Intl,Set,
   $:id=>{assert.equal(id,'searchesPage');return {
     get innerHTML(){return searchesHtml},
     set innerHTML(value){searchesHtml=value}
@@ -55,6 +55,24 @@ assert.match(searchesHtml,/1 new · 1 price changes/);
 assert.match(searchesHtml,/data-action="refresh" data-id="s1"/);
 assert.match(searchesHtml,/data-action="view" data-view="search:s1"/);
 assert.match(searchesHtml,/Open results/);
+// A search's own button remains visibly refreshing until scan status is complete.
+context.scanBusy=true;
+context.scanSearchIds=['s1'];
+searches.render();
+assert.match(searchesHtml,/is-refreshing/);
+assert.match(searchesHtml,/↻ Refreshing…/);
+assert.match(searchesHtml,/data-refresh-status="s1" role="status"/);
+context.scanBusy=false;
+context.scanSearchIds=[];
+searches.render();
+assert.doesNotMatch(searchesHtml,/is-refreshing/);
+assert.match(searchesHtml,/↻ Refresh now/);
+
+assert.match(code,/data-action="edit-car" data-id=/,'Edit details available directly on result cards');
+assert.match(code,/if \(!manualEditId\) \{/,'Editing a tracked advert preserves the current page');
+assert.doesNotMatch(code,/Select a saved car to edit/);
+assert.doesNotMatch(code,/car\.colourSource === 'photo'/);
+assert.doesNotMatch(code,/Estimated from photo/);
 
 // Changing tabs must never add every individual search to the header.
 let navHtml='';
