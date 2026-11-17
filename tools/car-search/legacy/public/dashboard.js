@@ -573,8 +573,7 @@ function renderSearchesPage() {
         <div><dt>Updates</dt><dd>${stats.updates}${updatesSummary}</dd></div>
       </dl>
       <div class="saved-search-actions">
-        <span class="saved-search-progress" data-refresh-status="${esc(search.id)}" role="status" aria-live="polite">${refreshing?'Refreshing…':''}</span>
-        <button class="button quiet" type="button" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>${refreshing?'↻ Refreshing…':'↻ Refresh now'}</button>
+        <button class="button quiet" type="button" data-action="refresh" data-id="${esc(search.id)}" aria-live="polite" ${scanBusy?'disabled':''}>${refreshing?'↻ Refreshing…':'↻ Refresh now'}</button>
         <button class="button dark" type="button" data-action="view" data-view="search:${esc(search.id)}">Open results →</button>
       </div>
     </article>`;
@@ -588,12 +587,6 @@ function syncSearchRefreshControls() {
     if (button.textContent !== text) button.textContent=text;
     button.disabled=scanBusy;
     button.closest('.saved-search-row')?.classList.toggle('is-refreshing',active);
-    const indicator=$('searchesPage').querySelectorAll('[data-refresh-status]');
-    for (const item of indicator) {
-      if (item.dataset.refreshStatus !== button.dataset.id) continue;
-      const status=active ? 'Refreshing' + (scanSubtext ? ' · '+scanSubtext : '…') : '';
-      if (item.textContent !== status) item.textContent=status;
-    }
   }
 }
 function renderNav() {
@@ -810,8 +803,17 @@ function geoMiles(a,b) {
     Math.cos(lat1)*Math.cos(lat2)*Math.sin((b.lng-a.lng)*rad/2)**2;
   return 3958.8*2*Math.asin(Math.min(1,Math.sqrt(p)));
 }
+function cleanAdvertLocation(raw) {
+  // Never feed display-only qualifiers into map/geocoding requests. Some
+  // historic adverts include their distance or "multiple locations" as text.
+  let place=String(raw || '').trim();
+  place=place.replace(/\s*(?:[·,;–—-]\s*)?multiple locations\s*$/i,'')
+    .replace(/\s*\(\s*multiple locations\s*\)\s*$/i,'')
+    .replace(/\s*\(\s*\d+(?:\.\d+)?\s*(?:miles?|mi)\s*\)\s*$/i,'');
+  return place.trim();
+}
 function locationForCar(car) {
-  return typeof car?.location === 'string' ? car.location.trim() : '';
+  return cleanAdvertLocation(car?.location);
 }
 function milesForGroup(group) {
   const points=group.map(car => locationPoints.get(mapLocationKey(locationForCar(car))))
@@ -943,8 +945,7 @@ function renderResults() {
 }
 
 function mapLocationForGroup(group) {
-  const locations = [...new Set(group.map(car => typeof car.location === 'string'
-    ? car.location.trim() : '').filter(Boolean))];
+  const locations = [...new Set(group.map(locationForCar).filter(Boolean))];
   if (!locations.length) return '';
   // If one source has already produced a mapped point, use that over an
   // ambiguous town from another website. Prefer actual postcodes otherwise.
@@ -960,7 +961,7 @@ function mapLocationForGroup(group) {
   return locations.sort((a,b) => rank(b)-rank(a))[0];
 }
 function mapLocationKey(location) {
-  return location.trim().toLowerCase();
+  return cleanAdvertLocation(location).toLowerCase();
 }
 async function showCarLocation(ids) {
   const rows=ids.map(id=>state.listings[id]).filter(Boolean);
@@ -1188,11 +1189,11 @@ function renderCard(g, statuses, inHiddenSection=false) {
   const inTitle = value => !!value && titleText.toLowerCase().replace(/[^a-z0-9]/g,'').includes(String(value).toLowerCase().replace(/[^a-z0-9]/g,''));
   const mileage = car.combinedMeta.fields.mileage.display;
   const transmission = effectiveTransmission(car);
-  const locationLabel = String(car.location || '').replace(/\s*\(\s*\d+(?:\.\d+)?\s*miles?\s*\)\s*$/i,'').trim();
+  const locationLabel = locationForCar(car);
   const cardSpecs = [
     car.year && !inTitle(car.year) ? `<span>${car.year}</span>` : '',
     mileage && !inTitle(mileage) ? `<span>${esc(mileage)}</span>` : '',
-    locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel)}${car.combinedMeta.fields.location.conflict?' · multiple locations':''}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
+    locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel)}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
     exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}</span>` : '',
     car.bhp && !inTitle(`${car.bhp} bhp`) ? `<span>${esc(car.bhp)} bhp</span>` : '',
     transmission && !inTitle(transmission) && !inTitle('DCT') && !inTitle('DSG') && !inTitle('PDK') ? `<span>${transmission==='automatic'?'Automatic':'Manual'}</span>` : ''
