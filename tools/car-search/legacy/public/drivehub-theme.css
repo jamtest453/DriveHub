@@ -202,3 +202,37 @@ h1 { font-size: clamp(33px,3.5vw,48px); line-height: 1.05; }
 .card-tool{padding:2px 0!important;margin-right:0!important;font-size:10px}
 .first-seen{font-size:9px}
 @media(max-width:719px){.listing-image{aspect-ratio:16/10;height:auto!important}}
+
+/* v142.29: dedicated saved-search management page. */
+.saved-searches-page{margin:0 0 26px}
+.saved-search-list{display:grid;gap:12px}
+.saved-search-row{
+  display:grid;grid-template-columns:minmax(190px,1.2fr) minmax(280px,1.6fr) auto;
+  align-items:center;gap:18px;padding:19px 22px;border:1px solid var(--dh-border);
+  border-radius:17px;background:var(--dh-surface);box-shadow:0 2px 9px rgba(20,49,58,.035);
+}
+.saved-search-main{min-width:0}
+.saved-search-main h2{font:800 16px/1.3 "Figtree",system-ui,sans-serif;color:var(--dh-dark);margin:0 0 9px;overflow-wrap:anywhere}
+.saved-search-sites{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+.saved-search-stats{display:grid;grid-template-columns:minmax(135px,1.5fr) minmax(80px,.7fr) minmax(115px,1fr);gap:12px;margin:0}
+.saved-search-stats>div{min-width:0}
+.saved-search-stats dt{font:750 10px/1.3 "Figtree",system-ui,sans-serif;letter-spacing:.03em;color:var(--dh-muted);margin-bottom:5px}
+.saved-search-stats dd{font:800 13px/1.45 "Figtree",system-ui,sans-serif;color:var(--dh-dark);margin:0}
+.saved-search-stats dd small{display:block;font-size:10px;font-weight:600;color:var(--dh-muted);margin-top:2px}
+.saved-search-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.saved-search-actions .button{padding:9px 11px;min-height:37px;font-size:11px}
+.searches-empty{padding:40px 24px;text-align:center;border:1px dashed var(--dh-border);border-radius:17px;background:var(--dh-surface)}
+.searches-empty h2{color:var(--dh-dark);font-size:18px}
+.searches-empty p{color:var(--dh-muted);font-size:13px}
+.car-location-distance{font-weight:650;color:var(--dh-muted);white-space:nowrap}
+@media(max-width:1190px){
+  .saved-search-row{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:13px}
+  .saved-search-actions{grid-column:1/-1;justify-content:flex-start}
+}
+@media(max-width:700px){
+  .saved-search-row{display:flex;flex-direction:column;align-items:stretch;padding:16px;gap:14px}
+  .saved-search-stats{grid-template-columns:minmax(0,1.5fr) minmax(0,.7fr) minmax(0,1fr);gap:9px}
+  .saved-search-stats dd{font-size:12px}
+  .saved-search-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .saved-search-actions .button{white-space:normal}
+}
