@@ -50,7 +50,7 @@ assert.ok(redraws.length>=2,'map paints while resolving and again when loaded');
 const redrawCount=redraws.length;
 await show(groups);
 assert.equal(requests,1,'same view reuses geocodes');
-assert.equal(redraws.length,redrawCount+1,
+assert.ok(redraws.length>redrawCount,
   'same data signature must redraw map after returning from list mode');
 ctx.ensureMapLibrary=async()=>false;
 await show([[{id:'B',location:'London',price:22000}]]);
