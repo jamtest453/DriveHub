@@ -1,4 +1,12 @@
-# DriveHub v142.27
+# DriveHub v142.28
+
+## v142.28 — Compact Car Search cards and single-row tool navigation
+
+- Search sources are now inside a collapsed-by-default expandable panel for each saved search, retaining their expanded state while refreshing that same search.
+- Car listing cards give more space to the complete photo without aggressive cropping. The information beneath each image is tighter, with repeated title specifications and repeated provider labels removed; all preview, location-map, save, hide and merge actions remain accessible.
+- The shared DriveHub header holds the tool title and actions on one line. The logo is the only Home shortcut in the shared navigation, rather than another Home icon in the tool links.
+- New car searches include vehicles with unknown exterior colour by default. Existing search preferences are preserved. Non-AI paint estimation now needs stronger pixel agreement and at least 86% confidence; old weak image guesses no longer count as known colours in listing filters.
+- No saved data migrations or provider credential changes. Added static regressions for the changed controls and threshold.
 
 ## v142.27 — Tool navigation in the global header and smarter car searches
 
