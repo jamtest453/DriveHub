@@ -889,7 +889,7 @@ function cleanAdvertLocation(raw) {
     // Remove outward as well as complete postcodes when there IS a town.
     .replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi,'')
     .replace(/\b[A-Z]{1,2}\d[A-Z\d]?\b/gi,'')
-    .replace(/^(?:location\s*[:\-]?|located in|based in|near)\s*/i,'')
+    .replace(/^(?:location\s*[:\-]?|located in|based in)\s*/i,'')
     .replace(/(?:,\s*)?(?:United Kingdom|England|Scotland|Wales|UK)\s*$/gi,'')
     .replace(/\(\s*\)/g,'')
     .replace(/\s*[,;|·]\s*[,;|·]\s*/g,', ')
