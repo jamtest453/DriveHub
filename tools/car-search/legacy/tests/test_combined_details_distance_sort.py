@@ -112,6 +112,7 @@ const ensureDistanceLocations=()=>{resolutions++};
 const statusSets=()=>({newIds:new Set(),changedIds:new Set()});
 const grouped=x=>x.map(row=>[row]);
 const baseGroupsForView=grouped;
+const priceMileageComparisonGroups=grouped;
 // The isolated distance test is not testing the independent value algorithm.
 const priceMileageRatings=()=>new Map();
 const comparePriceMileageGroups=()=>0;
