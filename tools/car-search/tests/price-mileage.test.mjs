@@ -134,4 +134,41 @@ assert.notEqual(nearby.get('twoYearsLater').label,'Not rated');
 const singleton=scoring.priceMileageRatings([car('single',24500,50000)]);
 assert.equal(singleton.get('single').label,'Not rated');
 assert.match(singleton.get('single').reason,/No second comparable/);
+// The combined vehicle's odometer can be null because different provider
+// adverts disagree. A valid individual odometer still supports a valuation.
+const mergedWithoutCompositeMileage=vm.runInNewContext(actual+
+  '\n({priceMileageRatings,priceMileageObservation})',{
+    ...ctx,
+    combinedCarDetails:g=>g.length>1 ? {...g[0],mileage:null} : g[0]
+  });
+const conflicting=[
+  car('mergedCheap',23000,52000)[0],
+  car('mergedOther',23500,68000,{site:'ebay'})[0]
+];
+const mixedRatings=mergedWithoutCompositeMileage.priceMileageRatings([
+  [conflicting[0],conflicting[1]],...sample
+]);
+assert.notEqual(mixedRatings.get('mergedCheap').label,'Not rated');
+assert.equal(mixedRatings.get('mergedCheap'),mixedRatings.get('mergedOther'),
+  'both provider adverts share a single price and mileage rating');
+assert.equal(mergedWithoutCompositeMileage.priceMileageObservation(conflicting).mileage,52000,
+  'the priced source odometer takes precedence on a conflict');
+assert.match(mixedRatings.get('mergedCheap').reason,/Merged adverts disagree on mileage/);
+
+// When the lowest-priced advert has no mileage, use the valid other source.
+const partial=[
+  car('mergedMissing',22000,null)[0],
+  car('mergedWithMiles',22500,54000,{site:'ebay'})[0]
+];
+assert.equal(mergedWithoutCompositeMileage.priceMileageObservation(partial).mileage,54000);
+assert.notEqual(mergedWithoutCompositeMileage.priceMileageRatings([partial,...sample])
+  .get('mergedMissing').label,'Not rated');
+
+// Explicitly entered mileage outranks other provider estimates.
+const manual=[
+  car('mergedSeller',22000,75000)[0],
+  car('mergedManual',23500,50000,{manualFields:['mileage'],site:'ebay'})[0]
+];
+assert.equal(mergedWithoutCompositeMileage.priceMileageObservation(manual).mileage,50000);
+
 console.log('Mileage-derived depreciation, six rating bands and sorting passed');
