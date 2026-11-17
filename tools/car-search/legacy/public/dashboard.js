@@ -1337,7 +1337,7 @@ function redrawListingMap(groups, pending=0, failed=false) {
       const primary = group[0];
       return '<button type="button" class="unmapped-item" data-map-ids="' +
         esc(group.map(c=>c.id).join(',')) + '"><span>' + esc(primary.title) +
-        '</span><small>' + esc(location || 'Location not provided') + '</small></button>';
+        '</span><small>' + esc(locationForCar({location}) || (location ? 'Advertised area' : 'Location not provided')) + '</small></button>';
     }).join('') + '</div></details>'
   ) : '';
   requestAnimationFrame(() => listingMap.invalidateSize());
@@ -1423,7 +1423,8 @@ function renderCard(g, statuses, inHiddenSection=false, valueRating=null) {
   const inTitle = value => !!value && titleText.toLowerCase().replace(/[^a-z0-9]/g,'').includes(String(value).toLowerCase().replace(/[^a-z0-9]/g,''));
   const mileage = car.combinedMeta.fields.mileage.display;
   const transmission = effectiveTransmission(car);
-  const locationLabel = locationForCar(car) || g.map(locationForCar).find(Boolean) || '';
+  const locationLabel = locationForCar(car) || g.map(locationForCar).find(Boolean) ||
+    locationForCar({location:locationPoints.get(mapLocationKey(mapLocationForGroup(g)))?.label}) || '';
   const hasMapLocation=!!mapLocationForGroup(g);
   const cardSpecs = [
     car.year && !inTitle(car.year) ? `<span>${car.year}</span>` : '',
