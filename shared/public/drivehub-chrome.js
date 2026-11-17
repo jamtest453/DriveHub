@@ -11,12 +11,12 @@
       if(window.parent!==window)return;
       if(!document.querySelector('link[data-drivehub-header-style]')){
         const style=document.createElement('link');
-        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14228';
+        style.rel='stylesheet';style.href='/shared/public/drivehub-chrome.css?v=14229';
         style.dataset.drivehubHeaderStyle='true';document.head.appendChild(style);
       }
     }
-    if(document.documentElement.dataset.drivehubChrome==='14228')return;
-    document.documentElement.dataset.drivehubChrome='14228';
+    if(document.documentElement.dataset.drivehubChrome==='14229')return;
+    document.documentElement.dataset.drivehubChrome='14229';
 
     let sourceNav=null;
     let sourceObserver=null;
@@ -137,7 +137,7 @@
       actions.replaceChildren();
       const tabs=document.createElement('nav');
       tabs.className='drivehub-search-tabs';
-      tabs.setAttribute('aria-label','Car Search pages and saved searches');
+      tabs.setAttribute('aria-label','Car Search sections');
       const originals=[...searchNavSource.querySelectorAll('button[data-action="view"]')];
       const active=originals.find(b=>b.classList.contains('selected'))?.dataset.view || 'overview';
       for(const original of originals){
@@ -165,7 +165,7 @@
       // without expanding the global header to multiple lines.
       const selector=document.createElement('select');
       selector.className='drivehub-search-select';
-      selector.setAttribute('aria-label','Choose Car Search page or saved search');
+      selector.setAttribute('aria-label','Choose Car Search section');
       for(const original of originals){
         const option=document.createElement('option');
         option.value=original.dataset.view;
