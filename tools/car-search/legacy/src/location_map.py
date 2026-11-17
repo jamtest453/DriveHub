@@ -35,7 +35,7 @@ def cache_key(raw):
     miles = distance_hint(raw)
     # v2 avoids reusing older negative results that ignored settlement type
     # and gave ambiguous names like Hayes the wrong candidate.
-    return cleaned + ("|%.1fmi|placev2" % miles if miles else "")
+    return cleaned + ("|%.1fmi|placev3" % miles if miles else "|placev3")
 
 
 
@@ -57,6 +57,21 @@ def clean_location(raw):
     text = re.sub(r"(?:,?\s*(?:United Kingdom|UK|England|Scotland|Wales|Northern Ireland))+$",
                   "", text, flags=re.I).strip(" ,;:-")
     text = re.sub(r"^(?:located in|location\s*:|based in|near|in)\s+", "", text, flags=re.I)
+    text = re.sub(r"\s*(?:[·,;|–—-]\s*)?multiple locations\s*$", "", text, flags=re.I)
+    text = re.sub(r"\s*\(\s*multiple locations\s*\)\s*$", "", text, flags=re.I)
+    # A real named place beats an appended full/outward postcode. Retain
+    # *postcode-only* input so it can still locate an approximate area.
+    postcode = POSTCODE.search(text)
+    without_postcodes = POSTCODE.sub("", text)
+    without_postcodes = re.sub(r"\b[A-Z]{1,2}\d[A-Z\d]?\b", "", without_postcodes, flags=re.I)
+    without_postcodes = re.sub(r"\s*[,;|·]\s*[,;|·]\s*", ", ", without_postcodes)
+    without_postcodes = without_postcodes.strip(" ,;|·:-")
+    if without_postcodes and re.search(r"[a-z]", without_postcodes, re.I):
+        text = without_postcodes
+    elif postcode:
+        text = postcode.group(1)
+    elif OUTCODE.fullmatch(text):
+        text = text.upper()
     if not text or len(text) > 120 or text.casefold() in IGNORED:
         return ""
     return text
@@ -227,7 +242,16 @@ class LocationResolver:
             if kind == "place":
                 origin = await self._origin(client) if miles is not None else None
                 return find_place(result, value, hint, distance=miles, origin=origin), True
-            return valid_point(result, precision, value), True
+            # Postcodes.io gives administrative place names alongside the
+            # postcode coordinates. Show an area name, never a raw postcode,
+            # in marker captions and location dialogs.
+            locality = value
+            if isinstance(result, dict):
+                locality = next((str(result.get(k)).strip() for k in
+                    ("parish", "admin_ward", "admin_district", "region")
+                    if result.get(k) and str(result[k]).strip().casefold() not in
+                    ("unparished area", "unparished", "none")), "Advertised area")
+            return valid_point(result, precision, locality), True
         except (httpx.HTTPError, ValueError, AttributeError, TypeError):
             return None, False
 

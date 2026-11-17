@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="drivehub-theme.css">
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous" defer></script>
   <script src="dashboard.js" defer></script>
-  <script src="/shared/public/drivehub-chrome.js?v=14234" defer></script>
+  <script src="/shared/public/drivehub-chrome.js?v=14235" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -58,6 +58,7 @@
                 </select>
               </label>
               <label>Exterior colour<select id="resultColour"><option value="any">Any</option><option value="unknown">Unknown / not confirmed</option><option value="black">Black</option><option value="white">White</option><option value="silver">Silver</option><option value="grey">Grey</option><option value="blue">Blue</option><option value="red">Red</option><option value="green">Green</option><option value="yellow">Yellow</option><option value="orange">Orange</option><option value="purple">Purple</option><option value="brown">Brown</option><option value="gold">Gold</option><option value="beige">Beige</option></select></label>
+              <label>Body type<select id="resultBodyType"><option value="any">Any (including unknown)</option><option value="coupe">Coupe</option><option value="convertible">Convertible / Roadster</option><option value="saloon">Saloon</option><option value="hatchback">Hatchback</option><option value="estate">Estate</option><option value="suv">SUV / 4x4</option><option value="mpv">MPV</option><option value="pickup">Pick-up</option><option value="van">Van</option><option value="other">Other</option></select></label>
               <label>Transmission<select id="resultTransmission"><option value="any">Any</option><option value="automatic">Automatic</option><option value="manual">Manual</option></select></label>
               <button class="button quiet" type="button" id="resetResultFilters">Clear result filters</button>
             </div>
@@ -119,6 +120,11 @@
           <select id="carTransmission" class="field"><option value="any">Any</option><option value="automatic">Automatic / DCT / DSG / PDK</option><option value="manual">Manual</option></select>
         </label>
       </div>
+      <div class="filter-group">
+        <span class="field-label">Body type — select any</span>
+        <div id="bodyTypeChoices" class="body-type-choices" role="group" aria-label="Vehicle body types"></div>
+        <p class="form-help">If no body style is specified in an advert, the vehicle is still included. Only confirmed, unwanted body types are excluded.</p>
+      </div>
       <div class="filter-group"><span class="field-label">Exterior colours — select any</span>
         <div id="colourChoices" class="choice-grid" role="group" aria-label="Exterior colours"></div>
         <label class="colour-strict-choice"><input type="checkbox" id="carStrictColour" checked>
@@ -178,6 +184,15 @@
             <option value="orange">Orange</option><option value="purple">Purple</option>
             <option value="brown">Brown</option><option value="gold">Gold</option>
             <option value="beige">Beige</option><option value="other">Other</option>
+          </select>
+        </label>
+        <label class="input-block">Body type
+          <select id="manualCarBodyType" class="field">
+            <option value="">Unknown</option><option value="coupe">Coupe</option>
+            <option value="convertible">Convertible / Roadster</option><option value="saloon">Saloon</option>
+            <option value="hatchback">Hatchback</option><option value="estate">Estate</option>
+            <option value="suv">SUV / 4x4</option><option value="mpv">MPV</option>
+            <option value="pickup">Pick-up</option><option value="van">Van</option><option value="other">Other</option>
           </select>
         </label>
         <label class="input-block">Transmission

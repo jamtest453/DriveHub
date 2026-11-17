@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from .scanner import clean_url, site_for, unsafe_host
 from .colour import COLOUR_CHOICES
+from .body_type import BODY_TYPES
 
 EDITABLE_TEXT = {
     "title": 220, "description": 4000, "location": 120,
@@ -20,7 +21,7 @@ EDITABLE_NUMERIC = {
     "engine": (0.1, 12),
     "bhp": (1, 2000),
 }
-EDITABLE = frozenset((*EDITABLE_TEXT, *EDITABLE_NUMERIC, "colour", "transmission"))
+EDITABLE = frozenset((*EDITABLE_TEXT, *EDITABLE_NUMERIC, "colour", "bodyType", "transmission"))
 SITE_NAMES = {"autotrader": "Auto Trader", "ebay": "eBay",
               "pistonheads": "PistonHeads", "facebook": "Facebook Marketplace"}
 
@@ -97,6 +98,10 @@ def validate_manual_details(raw, *, allow_empty=False):
         elif field == "colour":
             if not isinstance(value, str) or value.casefold() not in (*COLOUR_CHOICES, ""):
                 raise ValueError("Choose a supported exterior colour.")
+            result[field] = value.casefold()
+        elif field == "bodyType":
+            if not isinstance(value, str) or value.casefold() not in (*BODY_TYPES, ""):
+                raise ValueError("Choose a supported body type or leave it unknown.")
             result[field] = value.casefold()
         elif field == "transmission":
             if not isinstance(value, str) or value.casefold() not in ("", "automatic", "manual"):

@@ -23,6 +23,7 @@ def test_autotrader_imports_make_model_prices_year_mileage_colour_transmission()
     assert f["mileageMax"] == 65000
     assert f["transmission"] == "automatic"
     assert f["colours"] == ["blue", "grey"]
+    assert f["bodyTypes"] == []
     assert f["includeUnknownColours"] is True, "Imported URLs should retain the app’s include-unknown default"
     assert any("Location/postcode" in warning for warning in parsed["warnings"])
     assert "utm_source" not in str(parsed["warnings"])
@@ -54,7 +55,8 @@ def test_user_reported_porsche_996_carrera_4s_url():
     assert imported["filters"]["requiredKeywords"] == "996, Carrera 4S"
     assert "trim / variant (required keywords)" in imported["applied"]
     warnings = " ".join(imported["warnings"])
-    assert "body-type" in warnings
+    assert imported["filters"]["bodyTypes"] == ["coupe"]
+    assert "body-type" not in warnings
     assert "Location/postcode" in warnings
 
 
@@ -122,7 +124,8 @@ def test_unknown_site_specific_filters_are_reported_not_guessed():
         "aggregatedTrim=Competition")
     assert parsed["name"] == "BMW M2"
     joined = " ".join(parsed["warnings"])
-    assert "fuel-type" in joined and "body-type" in joined
+    assert "fuel-type" in joined and "body-type" not in joined
+    assert parsed["filters"]["bodyTypes"] == ["coupe"]
     assert "aggregatedTrim" not in joined  # Now mapped into required keywords.
     assert parsed["filters"]["requiredKeywords"] == "Competition"
 

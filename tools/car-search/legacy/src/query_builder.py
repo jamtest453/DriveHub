@@ -7,6 +7,7 @@ import re
 import os
 from urllib.parse import urlencode
 from .colour import COLOUR_CHOICES, listing_exterior_colour
+from .body_type import BODY_TYPES, listing_body_type
 from .vehicle_names import resolve_vehicle_query
 
 SOURCES = ("autotrader", "ebay", "pistonheads", "facebook")
@@ -59,7 +60,7 @@ def validate_filters(raw):
     result = {"keywords": preferred,  # Legacy alias retained for old backups/clients.
               "requiredKeywords": required, "requiredKeywordLogic": required_logic,
               "preferredKeywords": preferred,
-              "excludeKeywords": excluded, "colours": [],
+              "excludeKeywords": excluded, "colours": [], "bodyTypes": [],
               "transmission": transmission.casefold(),
               "strictColour": strict_colour, "includeUnknownColours": include_unknown}
     colours = raw.get("colours", [])
@@ -68,6 +69,13 @@ def validate_filters(raw):
     ):
         raise ValueError("Choose valid colours.")
     result["colours"] = sorted(set(c.lower() for c in colours))
+    body_types = raw.get("bodyTypes", [])
+    if not isinstance(body_types, list) or len(body_types) > len(BODY_TYPES) or any(
+        not isinstance(body, str) or body.casefold() not in BODY_TYPES
+        for body in body_types
+    ):
+        raise ValueError("Choose valid vehicle body types.")
+    result["bodyTypes"] = sorted(set(body.casefold() for body in body_types))
     # Keep the legacy flag in outgoing API responses for old clients,
     # while deriving it from the explicit include-unknown setting.
     if result["colours"]:
@@ -194,6 +202,10 @@ def generate_links(filters, sources=SOURCES, search_name=None):
                 url = "https://www.pistonheads.com/buy/search?" + urlencode({"keywords": combined})
                 note = "Unrecognised make: PistonHeads keyword search. Vehicle filters checked locally."
         link = {"site": site, "url": url, "sourceNote": note}
+        if filters.get("bodyTypes"):
+            link["sourceNote"] += (" Body styles are checked locally because "
+                                   "provider-only body-type filters remove "
+                                   "adverts that do not specify a body style.")
         if filters["colours"]:
             if filters["includeUnknownColours"]:
                 link["sourceNote"] += (" Selected exterior colours plus unknowns: "
@@ -246,6 +258,7 @@ def specs(item):
         m = re.search(r"\b(\d{2,4})\s*(?:bhp|hp|ps)\b", normal)
         if m: bhp = int(m.group(1))
     return {"colour": value, "colourSource": evidence,
+            "bodyType": listing_body_type(item),
             "engine": raw_engine, "bhp": bhp,
             "transmission": infer_transmission(item)}
 
@@ -315,6 +328,13 @@ def apply_local_filters(item, filters, search_name=None):
         if transmission is None:
             unknown.append("transmission")
         elif transmission != selected_transmission:
+            return False, []
+    body_types = filters.get("bodyTypes") or []
+    if body_types:
+        body_type = item.get("bodyType") or details["bodyType"]
+        if not body_type:
+            unknown.append("bodyType")
+        elif body_type not in body_types:
             return False, []
     colours = filters.get("colours") or []
     if colours:

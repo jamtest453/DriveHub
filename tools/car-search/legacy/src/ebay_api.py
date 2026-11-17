@@ -105,6 +105,9 @@ def ebay_item(item):
                        if label in ("exterior colour", "exterior color",
                                     "vehicle colour", "vehicle color", "colour", "color")
                        and values and isinstance(values[0], str)), "")
+    raw_body_type = next((values[0] for label, values in aspects.items()
+                          if label in ("body type", "body style", "bodystyle", "bodytype")
+                          and values and isinstance(values[0], str)), "")
     desc = str(item.get("shortDescription") or "")
     text = title + " " + desc
     y = re.search(r"\b(19[89]\d|20[0-2]\d)\b", text)
@@ -122,6 +125,7 @@ def ebay_item(item):
         "location": ", ".join(str(location.get(k, "")) for k in ("city", "postalCode") if location.get(k)),
         "registration": "",
         "colour": raw_colour,
+        "bodyType": raw_body_type,
     }
 
 

@@ -1,3 +1,13 @@
+# DriveHub v142.35
+
+## v142.35 — Reliable location map, body-style filters and merged mileage ratings
+
+- Location captions on car cards now show settlement names, not postcodes. The map/geocoding queries strip irrelevant mileage distances, incomplete postcode fragments and multiple-location annotations. Full postcode-only adverts can still be mapped to an approximate area, with a place label when available.
+- Both map modes retry through an alternative established mapping library source if the original CDN is unavailable, avoid asynchronous view-switch races, and repaint existing pins on return to Map mode even if the listing data has not changed. Offline or blocked maps explain the failure rather than silently showing an empty container.
+- Added **Body type** as a multi-choice saved-search criterion and a single-choice result filter. Available categories are Coupe, Convertible/Roadster, Saloon, Hatchback, Estate, SUV/4x4, MPV, Pick-up, Van and Other. Any vehicle whose body style is not reliably identified remains included regardless of the selected styles. Known mismatches are excluded and merged adverts are checked consistently. Body styles from explicit advert fields/titles, eBay structured aspects, website URL imports and owner edits are supported. Strict source-side body filters are intentionally not used because they'd hide body-style-unknown cars.
+- When merged source adverts disagree on mileage, the car's body and price/mileage comparison can use a valid source odometer reading rather than treating the entire car as having no mileage. Per-source conflicts remain visible in detailed specs and in the price rating explanation.
+- Added regression tests for map resolution, location display, body-type filters and merged-car pricing. No previous saved searches, notes or price histories are deleted.
+
 # DriveHub v142.34
 
 ## v142.34 — Provider filters, recent updates and more usable price ratings

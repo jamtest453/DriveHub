@@ -256,3 +256,11 @@ h1 { font-size: clamp(33px,3.5vw,48px); line-height: 1.05; }
 .price-value-terrible{color:#963e3c;background:#fbe9e7;border-color:#edc6c2}
 .price-value-unrated{color:#657478;background:#f0f3f2;border-color:#dbe4e0}
 .car-price:has(.price-value-indicator){display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* v142.35: body-style filters allow several styles and retain unknown types. */
+.body-type-choices{display:flex;flex-wrap:wrap;gap:8px}
+.body-type-choice{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;
+  border:1px solid var(--dh-border,#d2e0d7);border-radius:9px;
+  background:#fff;color:var(--dh-ink,#14313a);font-size:12px;font-weight:650;cursor:pointer}
+.body-type-choice:has(input:checked){border-color:#6cac8b;background:#e4f3e9;color:#175b43}
+.body-type-choice input{accent-color:var(--dh-green,#2f9166)}

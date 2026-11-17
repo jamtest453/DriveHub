@@ -97,17 +97,32 @@ assert.doesNotMatch(navHtml,/data-view="search:s1"/);
 
 // Map location lookups use only the actual place, even when imported adverts
 // carry display-only mileage or contradictory-provider indicators.
-const placeFns=vm.runInNewContext(section('function cleanAdvertLocation(','function milesForGroup(')+
-  '\n({cleanAdvertLocation,locationForCar})');
+const placeFns=vm.runInNewContext(section('function postcodeOnlyLocation(','function milesForGroup(')+
+  '\n({cleanAdvertLocation,locationForCar,mapLocationForCar,postcodeOnlyLocation})');
 assert.equal(placeFns.cleanAdvertLocation('Hayes (157 miles) · multiple locations'),'Hayes');
 assert.equal(placeFns.cleanAdvertLocation('Hayes (multiple locations)'),'Hayes');
 assert.equal(placeFns.cleanAdvertLocation('Hayes, multiple locations'),'Hayes');
 assert.equal(placeFns.cleanAdvertLocation('Hayes (157 mi)'),'Hayes');
 assert.equal(placeFns.cleanAdvertLocation('Multiple locations'),'');
+assert.equal(placeFns.cleanAdvertLocation('Bristol, BS1 1AA'),'Bristol');
+assert.equal(placeFns.cleanAdvertLocation('High Lane, SK12'),'High Lane');
+assert.equal(placeFns.cleanAdvertLocation('SK12 2NL, High Lane'),'High Lane');
+assert.equal(placeFns.cleanAdvertLocation('Manchester M2 (28 miles)'),'Manchester');
+assert.equal(placeFns.cleanAdvertLocation('Sutton Coldfield · 28 miles away'),'Sutton Coldfield');
+assert.equal(placeFns.cleanAdvertLocation('Newport, Isle of Wight, PO30'),'Newport, Isle of Wight');
+assert.equal(placeFns.cleanAdvertLocation('SW1A 1AA'),'');
+assert.equal(placeFns.cleanAdvertLocation('SK12'),'');
+assert.equal(placeFns.locationForCar({location:'High Lane, Cheshire, SK12 2NL'}),'High Lane');
+assert.equal(placeFns.locationForCar({location:'Bristol BS1 1AA'}),'Bristol');
+assert.equal(placeFns.locationForCar({location:'SW1A 1AA'}),'');
+assert.equal(placeFns.mapLocationForCar({location:'SK12 2NL'}),'SK12 2NL');
+assert.equal(placeFns.mapLocationForCar({location:'M2'}),'');
 const mapFns=vm.runInNewContext(section('function mapLocationForGroup(','async function showCarLocation(')+
   '\n({mapLocationForGroup,mapLocationKey})',{
     locationForCar:placeFns.locationForCar,
-    cleanAdvertLocation:placeFns.cleanAdvertLocation,locationPoints:new Map()
+    mapLocationForCar:placeFns.mapLocationForCar,
+    cleanAdvertLocation:placeFns.cleanAdvertLocation,
+    postcodeOnlyLocation:placeFns.postcodeOnlyLocation,locationPoints:new Map()
   });
 assert.equal(mapFns.mapLocationKey('Hayes (157 miles) · multiple locations'),'hayes');
 assert.equal(mapFns.mapLocationForGroup([
@@ -115,7 +130,12 @@ assert.equal(mapFns.mapLocationForGroup([
 ]),'Hayes');
 assert.equal(mapFns.mapLocationForGroup([
   {location:'Manchester (21 miles)'},{location:'SK12 2NL'}
-]),'SK12 2NL');
+]),'Manchester');
+assert.equal(mapFns.mapLocationKey('Bristol, BS1 1AA'),'bristol');
+assert.equal(mapFns.mapLocationKey('Bristol, BS1'),'bristol');
+assert.equal(mapFns.mapLocationKey('SK12 2NL'),'sk12 2nl');
+assert.equal(mapFns.mapLocationForGroup([{location:'SK12 2NL'}]),'SK12 2NL');
+assert.equal(mapFns.mapLocationForGroup([{location:'SK12'}]),'');
 
 // Distance stays inside the clickable location, in brackets, with no separate chip.
 const car={
@@ -127,20 +147,29 @@ const cardCtx={
   Set,Intl,Math,SITE_NAMES:{autotrader:'Auto Trader'},
   combinedCarDetails:()=>car,matchingColourAdvert:()=>car,
   matchesResultFilters:()=>true,milesForGroup:()=>157.3,
-  effectiveTransmission:()=>'',exteriorColour:()=>'',bestPhotoMatch:()=>null,
+  effectiveTransmission:()=>'',exteriorColour:()=>'',bodyTypeForCar:()=>'',bestPhotoMatch:()=>null,
   imageUrl:()=>'',linkUrl:()=>'',getSearch:()=>null,
   hasSeparatedMatches:()=>false,when:()=> '17 Nov',
   fmtPrice:()=> '£24,500',esc:value=>String(value),
   locationForCar:placeFns.locationForCar,
+  mapLocationForGroup:mapFns.mapLocationForGroup,
   state:{manualDuplicates:{}},mergeFrom:null
 };
 const renderCard=vm.runInNewContext(section('function renderCard(','function openCarDetails(')+'\nrenderCard',cardCtx);
-const result=renderCard([{id:'a',site:'autotrader',price:24500}],{
+const result=renderCard([{id:'a',site:'autotrader',price:24500,location:car.location}],{
   newIds:new Set(),changedIds:new Set()
 });
 assert.match(result,/Hayes <span class="car-location-distance">\(157 miles\)<\/span>/);
 assert.doesNotMatch(result,/≈157 mi/);
 assert.match(result,/data-action="location-map"/);
+assert.doesNotMatch(result,/SK12 2NL|postcode/i);
+car.location='Bristol, BS1 1AA';
+const namedCard=renderCard([{id:'a',site:'autotrader',price:24500,location:car.location}],{
+  newIds:new Set(),changedIds:new Set()
+});
+assert.match(namedCard,/>Bristol/);
+assert.doesNotMatch(namedCard,/BS1 1AA/);
+car.location='Hayes (150 miles) · multiple locations';
 assert.doesNotMatch(result,/multiple locations/i,
   'provider conflict hints never contaminate listing location or map text');
 console.log('Saved Searches page, deduplicated updates and inline distance checks passed');

@@ -158,6 +158,24 @@
     }
     return '';
   }
+  function findBodyType(card) {
+    // Trust only a specifically labelled body-style field. Model names and
+    // free-text descriptions can refer to multiple possible body shapes.
+    for(const selector of [
+      '[itemprop="bodyType"]','[data-testid*="body-type"]',
+      '[data-testid*="body-style"]','[data-qa*="body-type"]',
+      '[data-qa*="body-style"]'
+    ]) {
+      const node=card.querySelector(selector);
+      const value=node && pageText(node).replace(/^body\s*(?:type|style)\s*[:\-]?\s*/i,'').trim();
+      if(value && value.length<65) return value;
+    }
+    for(const line of String(card.innerText||'').split(/[\r\n]+/)) {
+      const match=line.match(/^\s*body\s*(?:type|style)\s*[:\-]\s*(.{3,55})\s*$/i);
+      if(match) return tidy(match[1]);
+    }
+    return '';
+  }
   function findTransmission(card) {
     const text = pageText(card);
     if (/\b(?:dct|dsg|pdk|cvt|tiptronic|steptronic|automatic|auto gearbox|dual.clutch)\b/i.test(text))
@@ -224,6 +242,7 @@
         price: findPrice(card, site), image: findImage(card), year: year(title) || year(text),
         mileage: mileage(text), location: findLocation(card, site, title), transmission: findTransmission(card),
         colour: findExteriorColour(card),
+        bodyType: findBodyType(card),
         description: text.slice(0, 900),
         registration: (text.match(/\b[A-Z]{2}\d{2}\s?[A-Z]{3}\b/) || [])[0] || ''
       });
