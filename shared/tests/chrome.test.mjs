@@ -53,7 +53,7 @@ console.log('Shared DriveHub chrome tests passed');
 
 assert.match(js,/ensureGlobalHeader=/,'every page gets the same shared header');
 assert.match(js,/path\.startsWith\('\/search\/'\)/,'Car Search header uses the shared route context');
-assert.match(css,/v142\.26 · Shared DriveHub header/,'same light DriveHub design is used across tools');
+assert.match(css,/v142\.27 · Shared DriveHub header/,'same light DriveHub design is used across tools');
 assert.match(gatewayHtml,/drivehub-chrome\.js\?v=14227/,'the home page also loads the shared header');
 
 assert.match(js,/const findSearchNav=/,'Car Search header reads the live saved search navigation');
