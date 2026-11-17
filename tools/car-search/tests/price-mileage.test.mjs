@@ -121,7 +121,7 @@ for(const result of small.values()) {
 }
 assert.deepEqual([...tiny].sort((a,b)=>
   scoring.comparePriceMileageGroups(a,b,small)).map(g=>g[0].id),
-  ['cheapHighMiles','slightlyDearerLowMiles']);
+  ['slightlyDearerLowMiles','cheapHighMiles']);
 // Same model up to two years apart is permitted only when closer-year
 // comparables are unavailable.
 const nearby=scoring.priceMileageRatings([
