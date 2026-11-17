@@ -36,6 +36,7 @@ const context={
     set innerHTML(value){searchesHtml=value}
   }},
   visibleSearchIds:()=>['a','b','c'],
+  visibleGroupedCars:()=>[...Map.groupBy(Object.values(state.listings),row=>row.group).values()],
   grouped:rows=>[...Map.groupBy(rows,row=>row.group).values()],
   older:()=> '1h ago',
   esc:value=>String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
