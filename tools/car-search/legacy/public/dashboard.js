@@ -893,72 +893,124 @@ function priceMileageObservation(group) {
       .sort((a,b)=>Number(a.price)-Number(b.price))[0] ||
     [...group].filter(car=>Number(car.price)>0)
       .sort((a,b)=>Number(a.price)-Number(b.price))[0];
-  const price=Number(priced?.price) || null;
+  const price=Number(priced?.price)>0 ? Number(priced.price) : null;
   const mileage=vehicleMileage(combined);
   const year=Number(combined?.year);
   const identity=vehicleIdentity(combined?.title);
   const family=identity ? identity.make+'/'+identity.model+'/'+priceMileageVariant(combined.title) : null;
-  // Sorting fallback when peer data is thin: higher mileage always increases
-  // the effective cost, unlike the misleading price / odometer ratio.
-  const adjustedCost=price!==null && mileage!==null ?
-    price*(1+mileage/100000) : Infinity;
   return {id:group[0]?.id,price,mileage,year,family,
-    transmission:effectiveTransmission(combined),adjustedCost};
+    transmission:effectiveTransmission(combined)};
 }
-function priceMileagePercentile(value, peers, field) {
-  // Ties share the midpoint, so identical prices/odometer readings do not
-  // artificially give one advert a better rating.
-  const lower=peers.filter(peer=>peer[field]<value).length;
-  const equal=peers.filter(peer=>peer[field]===value).length;
-  return peers.length>1 ? (lower+(equal-1)/2)/(peers.length-1) : .5;
+function priceMileageMedian(numbers) {
+  const sorted=[...numbers].filter(Number.isFinite).sort((a,b)=>a-b);
+  if (!sorted.length) return null;
+  const middle=Math.floor(sorted.length/2);
+  return sorted.length%2 ? sorted[middle] : (sorted[middle-1]+sorted[middle])/2;
+}
+function priceMileageDepreciation(peers) {
+  // Robust, empirical mileage depreciation using comparable advertised cars:
+  // a positive rate means that a higher-mileage car usually costs less.
+  // Using the median of pairwise price/mileage slopes reduces outlier impact.
+  const slopes=[];
+  const collect=(sameYearOnly)=>{
+    const pairs=[];
+    for(let i=0;i<peers.length;i++)for(let j=i+1;j<peers.length;j++) {
+      const a=peers[i],b=peers[j];
+      if (sameYearOnly && a.year!==b.year) continue;
+      const miles=b.mileage-a.mileage;
+      if (Math.abs(miles)<5000) continue; // Avoid noisy tiny mileage differences.
+      pairs.push((a.price-b.price)/miles);
+    }
+    return pairs;
+  };
+  const sameYear=collect(true);
+  slopes.push(...(sameYear.length>=2 ? sameYear : collect(false)));
+  const spread=Math.max(...peers.map(row=>row.mileage))-
+    Math.min(...peers.map(row=>row.mileage));
+  if (slopes.length<2 || spread<15000) return null;
+  const raw=priceMileageMedian(slopes);
+  // If these adverts do not show a credible negative price/mileage
+  // relationship, don't fabricate a depreciation rate or a bargain badge.
+  if (!Number.isFinite(raw) || raw<=0) return null;
+  const typical=priceMileageMedian(peers.map(row=>row.price));
+  // Protect from wildly distorted rates caused by incomplete trim matching.
+  const maxRate=typical*.10/10000; // At most 10% of typical value per 10k miles.
+  return Math.min(raw,maxRate);
+}
+function priceMileageTier(relativeDifference) {
+  // Relative to the median asking price at a common reference mileage.
+  // These bands reflect meaningful £ differences; do not force every
+  // group into the six categories when cars are priced almost identically.
+  if (relativeDifference<=-.12) return 'amazing';
+  if (relativeDifference<=-.055) return 'great';
+  if (relativeDifference<=-.02) return 'good';
+  if (relativeDifference<.03) return 'average';
+  if (relativeDifference<.12) return 'poor';
+  return 'terrible';
 }
 function priceMileageRatings(groups) {
   const rows=groups.map(priceMileageObservation);
   const cohorts=new Map();
   for(const row of rows) {
     if (!row.family || !Number.isInteger(row.year) || row.year<1950 ||
-        !Number.isFinite(row.adjustedCost)) continue;
+        row.price===null || row.mileage===null) continue;
     if(!cohorts.has(row.family))cohorts.set(row.family,[]);
     cohorts.get(row.family).push(row);
   }
   const rated=new Map();
   for(const row of rows) {
-    const peers=(cohorts.get(row.family) || []).filter(peer=>
+    const eligible=row.price!==null && row.mileage!==null &&
+      !!row.family && Number.isInteger(row.year) && row.year>=1950;
+    const peers=eligible ? (cohorts.get(row.family) || []).filter(peer=>
       Math.abs(peer.year-row.year)<=1 &&
-      (!row.transmission || !peer.transmission || row.transmission===peer.transmission));
-    const sufficient=peers.length>=3 && Number.isFinite(row.adjustedCost);
-    const priceRank=sufficient ? priceMileagePercentile(row.price,peers,'price') : null;
-    const milesRank=sufficient ? priceMileagePercentile(row.mileage,peers,'mileage') : null;
-    const combinedRank=sufficient ? .6*priceRank+.4*milesRank : null;
-    const tier=!sufficient ? 'unrated' : combinedRank<=.18 ? 'great' :
-      combinedRank<=.38 ? 'good' : combinedRank<=.63 ? 'fair' :
-      combinedRank<=.82 ? 'high' : 'poor';
-    const label={
-      great:'Great price',good:'Good price',fair:'Fair price',
-      high:'High price',poor:'Poor price',unrated:'Not rated'
-    }[tier];
+      (!row.transmission || !peer.transmission || row.transmission===peer.transmission)) : [];
+    const rate=peers.length>=3 ? priceMileageDepreciation(peers) : null;
+    const baselineMileage=rate!==null ? priceMileageMedian(peers.map(p=>p.mileage)) : null;
+    const adjusted=rate!==null ? peers.map(p=>
+      p.price+(p.mileage-baselineMileage)*rate) : [];
+    const typical=rate!==null ? priceMileageMedian(adjusted) : null;
+    const adjustedPrice=rate!==null ?
+      row.price+(row.mileage-baselineMileage)*rate : null;
+    const relativeDifference=typical>0 ? (adjustedPrice-typical)/typical : null;
+    const tier=relativeDifference===null ? 'unrated' : priceMileageTier(relativeDifference);
+    const labels={
+      amazing:'Amazing!',great:'Great',good:'Good',average:'Average',
+      poor:'Poor',terrible:'Terrible',unrated:'Not rated'
+    };
+    const currency=value=>'£'+Math.round(value).toLocaleString('en-GB');
     const reason=row.price===null ? 'Asking price is unknown.' :
-      row.mileage===null ? 'Vehicle mileage is unknown or unreliable.' :
-      !row.family || !Number.isInteger(row.year) ?
+      row.mileage===null ? 'Mileage is missing, contradictory or unreliable.' :
+      !row.family || !Number.isInteger(row.year) || row.year<1950 ?
         'Model or year is not reliable enough for a comparison.' :
-      !sufficient ? 'Need at least 3 comparable cars of a similar year, model and trim.' :
-      'Relative to '+peers.length+' comparable cars currently displayed (similar model, trim and year). Asking price counts 60%, mileage 40%. Not a market valuation.';
-    rated.set(row.id,{tier,label,score:combinedRank===null?null:1-combinedRank,
-      peers:peers.length,adjustedCost:row.adjustedCost,reason});
+      peers.length<3 ? 'Need at least 3 comparable cars with price and mileage details.' :
+      rate===null ? 'Not enough evidence of a consistent mileage-related price reduction in these comparable adverts.' :
+      (Math.abs(relativeDifference)*100).toFixed(1)+'% '+
+      (relativeDifference<0?'below':relativeDifference>0?'above':'equal to')+
+      ' the mileage-adjusted median of '+peers.length+' comparable cars. '+
+      'Adjusted to '+Math.round(baselineMileage).toLocaleString('en-GB')+' miles, '+
+      'using '+currency(rate*10000)+' per 10,000 miles from these adverts. '+
+      'Asking prices only; not a verified market valuation.';
+    rated.set(row.id,{tier,label:labels[tier],
+      score:relativeDifference===null?null:-relativeDifference,
+      relativeDifference,adjustedCost:adjustedPrice,
+      price:row.price,mileage:row.mileage,peers:peers.length,
+      depreciationPer10000:rate===null?null:rate*10000,reason});
   }
   return rated;
 }
 function comparePriceMileageGroups(a,b,ratings) {
   const left=ratings.get(a[0]?.id),right=ratings.get(b[0]?.id);
-  // Comparisons backed by similar vehicles precede unscored cars.
   const scoreA=left?.score ?? null,scoreB=right?.score ?? null;
-  if(scoreA!==null && scoreB===null)return -1;
-  if(scoreB!==null && scoreA===null)return 1;
-  if(scoreA!==null && scoreB!==null && scoreA!==scoreB)
+  // A supported percentage difference beats a speculative comparison.
+  if (scoreA!==null && scoreB===null) return -1;
+  if (scoreB!==null && scoreA===null) return 1;
+  if (scoreA!==null && scoreB!==null && scoreA!==scoreB)
     return scoreB-scoreA;
-  // With fewer than three peers, show no market-sounding badge, but keep
-  // the sort useful when only one or two cars meet the search.
-  return (left?.adjustedCost ?? Infinity)-(right?.adjustedCost ?? Infinity);
+  // No invented mileage rate when there are too few comparable cars:
+  // fall back to asking price, then lowest known mileage.
+  const priceA=left?.price ?? Infinity,priceB=right?.price ?? Infinity;
+  if(priceA!==priceB) return priceA-priceB;
+  return (left?.mileage ?? Infinity)-(right?.mileage ?? Infinity);
 }
 
 function renderResults() {
@@ -1010,7 +1062,7 @@ function renderResults() {
   $('resultsSubtitle').textContent = `${groups.length} ${groups.length === 1 ? 'car' : 'cars'} shown · ${lists.length} source listings · same-car matches grouped` +
     (sort === 'preferred' && search && keywordTerms(preferredKeywords(search)).length ?
       ' · preferred keyword matches first' : '') +
-    (sort === 'priceMileage' ? ' · price and mileage compared with similar cars' : '') +
+    (sort === 'priceMileage' ? ' · asking prices adjusted for mileage using comparable adverts' : '') +
     (wantsDistanceCoordinates() ? (distanceLookupBusy ? ' · locating adverts…' :
       ' · straight-line distance from High Lane (unknown locations last)') : '');
   $('listModeButton').classList.toggle('active', resultsLayout === 'list');
