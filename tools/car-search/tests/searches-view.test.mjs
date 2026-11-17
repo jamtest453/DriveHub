@@ -106,7 +106,8 @@ assert.equal(placeFns.cleanAdvertLocation('Hayes (157 mi)'),'Hayes');
 assert.equal(placeFns.cleanAdvertLocation('Multiple locations'),'');
 const mapFns=vm.runInNewContext(section('function mapLocationForGroup(','async function showCarLocation(')+
   '\n({mapLocationForGroup,mapLocationKey})',{
-    locationForCar:placeFns.locationForCar,locationPoints:new Map()
+    locationForCar:placeFns.locationForCar,
+    cleanAdvertLocation:placeFns.cleanAdvertLocation,locationPoints:new Map()
   });
 assert.equal(mapFns.mapLocationKey('Hayes (157 miles) · multiple locations'),'hayes');
 assert.equal(mapFns.mapLocationForGroup([
