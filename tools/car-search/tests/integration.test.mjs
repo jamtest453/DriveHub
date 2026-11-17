@@ -48,14 +48,14 @@ try{
   // Regression: the previous release mistakenly served the native Node Car Search CSS
   // for the outer tool shell. Missing .search-shell/#search-frame styles caused
   // the iframe to render at the browser-default 300 × 150 pixels.
-  const searchCss=await get('/search/styles.css?v=14229');
+  const searchCss=await get('/search/styles.css?v=14230');
   assert.equal(searchCss.status,200,'Car Search shell stylesheet is served');
   const shellCss=await searchCss.text();
   assert.match(shellCss,/\.search-shell\s*\{[\s\S]*?height:\s*100dvh/s,'Car Search shell spans the full viewport');
   assert.match(shellCss,/#search-frame\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%/s,'embedded scanner iframe fills the tool workspace');
   assert.match(shellCss,/\.search-workspace\s*\{[\s\S]*?min-height:\s*0/s,'workspace can grow and shrink inside the viewport');
-  assert.match(html,/drivehub-chrome\.js\?v=14229/,'Car Search renders the same global header as other tools');
-  const shellJs=await get('/search/app.js?v=14229');
+  assert.match(html,/drivehub-chrome\.js\?v=14230/,'Car Search renders the same global header as other tools');
+  const shellJs=await get('/search/app.js?v=14230');
   assert.equal(shellJs.status,200);
   assert.match(await shellJs.text(),/contentDocument\?\.readyState/,'Car Search removes its loader even if the iframe loads before JavaScript initialises');
   assert.match(html,/id="search-frame"[^>]+src="\/car-search-app\/"/,'full-size original Car Search still embedded');
@@ -63,7 +63,7 @@ try{
   const originalStyles=await import('node:fs/promises').then(fs=>fs.readFile(new URL('../legacy/public/drivehub-theme.css',import.meta.url),'utf8'));
   assert.match(originalPage,/href="drivehub-theme\.css"/,'restored Python dashboard loads the DriveHub theme');
   assert.match(originalPage,/id="locationDialog"/,'Car Search has a dedicated map modal for result-card locations');
-  assert.match(originalPage,/drivehub-chrome\.js\?v=14229/,'direct Car Search tabs also get the shared header');
+  assert.match(originalPage,/drivehub-chrome\.js\?v=14230/,'direct Car Search tabs also get the shared header');
   assert.match(originalPage,/id="locationMiniMap"/,'location modal has a Leaflet map container');
   assert.match(originalStyles,/Caprasimo/,'Car Search uses the same heading font as DriveHub');
   assert.match(originalStyles,/Figtree/,'Car Search uses the same body font as DriveHub');
@@ -133,11 +133,13 @@ try{
 
 const fs=await import('node:fs/promises');
 const dashboard=await fs.readFile(new URL('../legacy/public/dashboard.js',import.meta.url),'utf8');
-const photoEstimator=await fs.readFile(new URL('../legacy/src/image_colour.py',import.meta.url),'utf8');
+const photoHash=await fs.readFile(new URL('../legacy/src/photo_hash.py',import.meta.url),'utf8');
 const worker=await fs.readFile(new URL('../legacy/server.py',import.meta.url),'utf8');
 assert.match(dashboard,/details class="search-sources-panel"/,'source URLs are collapsed into a details panel');
 assert.match(dashboard,/const wasOpen = el.dataset.searchId/,'expanded panel persists during refreshes');
 assert.match(dashboard,/includeUnknownColours \?\? true/,'new searches include unknown colours by default');
 assert.match(dashboard,/const cardSpecs = \[/,'listing specifications are deduplicated');
-assert.match(photoEstimator,/share >= 0\.38 and separation >= 0\.55 and coherent >= 4/,'image colour vote must be coherent');
-assert.match(worker,/paint\.get\('confidence', 0\) >= \.86/,'worker requires higher image colour confidence');
+assert.doesNotMatch(photoHash,/estimate_paint/,'photo hashing no longer estimates paint');
+assert.doesNotMatch(worker,/paint\.get\('confidence'/,'backend never uses photo colours');
+assert.match(worker,/remove_photo_colour_guesses/,'legacy photo guesses are cleared');
+assert.match(worker,/asyncio\.wait_for\(/,'refresh has an explicit source timeout');

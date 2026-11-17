@@ -308,5 +308,9 @@ async def scan_link(browser, link, depth, stopped, progress):
             return {'ok': True, 'items': list(found.values()), 'pagesRead': pages_read, 'incomplete': True, 'caveat': f'Some result pages failed: {error}'}
         return {'ok': False, 'error': error}
     finally:
-        await context.close()
+        # A hung browser context must never leave a refresh running forever.
+        try:
+            await asyncio.wait_for(context.close(), timeout=12)
+        except Exception:
+            pass
 

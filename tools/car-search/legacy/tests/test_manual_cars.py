@@ -171,3 +171,85 @@ async def test_enrichment_fills_placeholder_but_preserves_manually_locked_title(
     assert server.state["listings"]["auto"]["mileage"] == 72000
     assert server.state["listings"]["edited"]["title"] == "My own Porsche"
     assert server.state["listings"]["edited"]["colour"] == "red"
+
+
+@pytest.mark.asyncio
+async def test_unsaved_search_result_can_be_edited_without_being_saved(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(server, "DATA_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(server, "state", server.fresh_state())
+    monkeypatch.setattr(server, "PASSWORD", "")
+    monkeypatch.setattr(server, "schedule_photo_hashes", lambda ids=None, limit=240: None)
+    key = "autotrader:1234"
+    server.state["listings"][key] = {
+        "id": key, "site": "autotrader", "title": "2017 BMW M2",
+        "price": 25000, "colour": "red", "colourSource": "title",
+        "saved": False, "manualFields": [], "priceHistory": []
+    }
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app),
+                                 base_url="http://testserver") as client:
+        response = await client.patch("/api/listings/manual/" + key, json={
+            "fields": {"title": "BMW M2 DCT", "price": 23950,
+                       "colour": "blue", "location": "Stockport"}
+        })
+    assert response.status_code == 200, response.text
+    edited = response.json()["state"]["listings"][key]
+    assert edited["saved"] is False
+    assert edited["title"] == "BMW M2 DCT"
+    assert edited["price"] == 23950
+    assert edited["colourSource"] == "manual"
+    assert edited["manualFields"] == ["colour", "location", "price", "title"]
+    server.update_listing({
+        "id": key, "site": "autotrader", "title": "BMW M2",
+        "price": 28000, "colour": "red", "colourSource": "explicit",
+        "location": "Manchester"
+    }, "2026-11-17T12:00:00Z")
+    assert server.state["listings"][key]["price"] == 23950
+    assert server.state["listings"][key]["title"] == "BMW M2 DCT"
+    assert server.state["listings"][key]["colour"] == "blue"
+    assert server.state["listings"][key]["location"] == "Stockport"
+    assert server.state["listings"][key]["saved"] is False
+
+
+@pytest.mark.asyncio
+async def test_refresh_always_clears_busy_if_source_times_out_and_browser_close_fails(monkeypatch):
+    monkeypatch.setattr(server, "state", server.fresh_state())
+    monkeypatch.setattr(server, "job", {
+        "busy": True, "stop": False, "label": "Checking BMW M2",
+        "detail": "", "message": "", "started": server.now(),
+        "finished": None, "searchIds": ["s1"]
+    })
+    monkeypatch.setattr(server, "store", lambda publish=True: None)
+    monkeypatch.setattr(server, "schedule_photo_hashes", lambda ids=None, limit=240: None)
+    server.state["searches"].append({
+        "id": "s1", "name": "BMW M2",
+        "links": [{"id": "l1", "site": "autotrader", "url": "https://www.autotrader.co.uk/car-search?make=BMW"}]
+    })
+
+    class Browser:
+        async def close(self):
+            raise RuntimeError("Chromium already closed")
+
+    class Chromium:
+        async def launch(self, **kwargs):
+            return Browser()
+
+    class Playwright:
+        chromium = Chromium()
+
+    class Context:
+        async def __aenter__(self):
+            return Playwright()
+        async def __aexit__(self, *args):
+            return None
+
+    async def broken_link(*args, **kwargs):
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(server, "async_playwright", Context)
+    monkeypatch.setattr(server, "scan_link", broken_link)
+    await server.perform_scan(["s1"])
+    assert server.job["busy"] is False
+    assert server.job["finished"] is not None
+    assert server.state["searches"][0]["lastReport"]["errors"]
+    assert "timed out" in server.state["searches"][0]["lastReport"]["errors"][0].lower()

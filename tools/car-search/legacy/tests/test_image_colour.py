@@ -1,97 +1,94 @@
-"""Non-AI photo-colour estimation and conservative provenance regression tests."""
+"""Image-derived exterior paint is retired; photo matching still works."""
 from io import BytesIO
+
+import pytest
 from PIL import Image, ImageDraw
 
-from src.image_colour import estimate_paint
 from src.photo_hash import image_fingerprint
 
 
-def photo(paint, bg='#a4b7aa', size=(800, 600)):
-    image = Image.new('RGB', size, bg)
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((115, 160, 685, 445), fill=paint)
-    draw.polygon([(195, 185), (550, 185), (592, 284), (175, 284)], fill='#29333d')
-    draw.ellipse((170, 390, 290, 510), fill='#1d2023')
-    draw.ellipse((515, 390, 635, 510), fill='#1d2023')
-    return image
+def sample_photo():
+    img = Image.new("RGB", (800, 600), "#adb6ab")
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((100, 170, 700, 440), fill="#1348b4")
+    draw.rectangle((185, 180, 615, 245), fill="#292b35")
+    draw.ellipse((150, 380, 280, 500), fill="#111111")
+    draw.ellipse((510, 380, 640, 500), fill="#111111")
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
 
 
-def test_bright_colours_are_detected_without_ai():
-    for colour in ('blue', 'red', 'yellow', 'green'):
-        result = estimate_paint(photo(colour))
-        assert result and result['colour'] == colour, (colour, result)
-        assert .75 <= result['confidence'] <= 1
+def test_fingerprint_retains_image_matching_but_never_estimates_paint():
+    result = image_fingerprint(sample_photo())
+    assert result is not None and result["p"] and result["d"]
+    assert len(result["rgb"]) == 3
+    assert "paint" not in result
 
 
-def test_neutral_paints_only_when_central_area_dominates():
-    for name,paint in [('black','#111111'),('white','#f5f5f5'),('silver','#bbbbbb'),('grey','#777777')]:
-        result=estimate_paint(photo(paint))
-        assert result and result['colour']==name, (name,result)
-        assert result['confidence']>=.78
+def test_retirement_cleans_only_photo_guesses_from_existing_data():
+    import server
+    raw = {"listings": {
+        "photo": {"colour": "blue", "colourSource": "photo",
+                  "photoColour": "blue", "photoColourConfidence": .98,
+                  "photoColourCheckedAt": 12345},
+        "manual": {"colour": "red", "colourSource": "manual",
+                   "photoColour": "blue"},
+        "explicit": {"colour": "grey", "colourSource": "explicit"},
+        "title": {"colour": "white", "colourSource": "title"},
+    }}
+    server.remove_photo_colour_guesses(raw)
+    assert raw["listings"]["photo"].get("colour") is None
+    assert raw["listings"]["photo"]["colourSource"] == "unknown"
+    assert "photoColour" not in raw["listings"]["photo"]
+    for key,expected in (("manual","red"),("explicit","grey"),("title","white")):
+        assert raw["listings"][key]["colour"] == expected
 
 
-def test_ambiguous_images_remain_unknown():
-    uniform = Image.new('RGB', (800, 600), '#d5d5d5')
-    assert estimate_paint(uniform) is None  # A uniform placeholder is not a car photo
-    alternating = Image.new('RGB', (800, 600), '#2040dc')
-    painter = ImageDraw.Draw(alternating)
-    for x in range(0, 800, 60):
-        painter.rectangle((x, 0, x+29, 600), fill='#ec2424')
-    assert estimate_paint(alternating) is None
-
-
-def test_fingerprint_includes_paint_without_new_download():
-    source=photo('blue')
-    buffer=BytesIO()
-    source.save(buffer, format='PNG')
-    result=image_fingerprint(buffer.getvalue())
-    assert result is not None and result['p'] and result['d']
-    assert result['paint']['colour']=='blue'
-
-
-def test_photo_worker_respects_colour_evidence(monkeypatch):
+@pytest.mark.asyncio
+async def test_photo_worker_keeps_user_and_advert_colours(monkeypatch):
     import asyncio
     import server
-
     rows = {
-        'missing': {'id':'missing','image':'https://images.atcdn.co.uk/1.jpg','colourSource':'unknown'},
-        'title': {'id':'title','image':'https://images.atcdn.co.uk/2.jpg','colour':'red','colourSource':'title'},
-        'explicit': {'id':'explicit','image':'https://images.atcdn.co.uk/3.jpg','colour':'red','colourSource':'explicit'},
-        'manual': {'id':'manual','image':'https://images.atcdn.co.uk/4.jpg','colour':'black','colourSource':'manual','manualFields':['colour']},
+        "missing": {"id":"missing","image":"https://images.atcdn.co.uk/1.jpg",
+                    "colourSource":"unknown"},
+        "manual": {"id":"manual","image":"https://images.atcdn.co.uk/2.jpg",
+                   "colour":"black","colourSource":"manual","manualFields":["colour"]},
+        "explicit": {"id":"explicit","image":"https://images.atcdn.co.uk/3.jpg",
+                     "colour":"red","colourSource":"explicit"},
     }
-    monkeypatch.setattr(server,'state',{'listings': rows})
-    monkeypatch.setattr(server,'PHOTO_QUEUE',asyncio.Queue())
-    monkeypatch.setattr(server,'PHOTO_PENDING',set(rows))
-    monkeypatch.setattr(server,'store',lambda:None)
-    monkeypatch.setattr(server,'job',{'busy':False})
+    monkeypatch.setattr(server,"state",{"listings":rows})
+    monkeypatch.setattr(server,"PHOTO_QUEUE",asyncio.Queue())
+    monkeypatch.setattr(server,"PHOTO_PENDING",set(rows))
+    monkeypatch.setattr(server,"job",{"busy":False})
+    monkeypatch.setattr(server,"store",lambda publish=True:None)
     async def fake(url):
-        return {'p':'0'*16,'d':'f'*16,'rgb':[15,30,200],
-                'paint':{'colour':'blue','confidence':.94}}
-    monkeypatch.setattr(server,'download_fingerprint',fake)
-
-    async def check():
-        for key in rows:
-            server.PHOTO_QUEUE.put_nowait(key)
-        await server.photo_hash_worker()
-    asyncio.run(check())
-    assert rows['missing']['colour']=='blue' and rows['missing']['colourSource']=='photo'
-    for key in ('title','explicit','manual'):
-        assert rows[key]['colour']=='black' if key=='manual' else rows[key]['colour']=='red'
-        assert rows[key]['colourSource']==key
-    for item in rows.values():
-        assert item['photoColour']=='blue'
-        assert item['photoColourCheckedAt']
+        return {"p":"0"*16,"d":"f"*16,"rgb":[14,31,200]}
+    monkeypatch.setattr(server,"download_fingerprint",fake)
+    for key in rows:
+        server.PHOTO_QUEUE.put_nowait(key)
+    await server.photo_hash_worker()
+    assert "colour" not in rows["missing"]
+    assert rows["missing"]["colourSource"] == "unknown"
+    assert rows["manual"]["colour"] == "black"
+    assert rows["explicit"]["colour"] == "red"
+    for car in rows.values():
+        assert car["photoHash"]["p"] == "0"*16
+        assert "photoColour" not in car
+        assert "photoColourCheckedAt" not in car
 
 
-def test_new_photo_invalidates_previous_photo_colour(monkeypatch):
+def test_new_photo_drops_old_guess_without_restoring_estimation(monkeypatch):
     import server
-    car={'id':'m2','site':'autotrader','title':'BMW M2','url':'https://www.autotrader.co.uk/car-details/202611027550673',
-         'image':'https://images.atcdn.co.uk/old.jpg','colour':'blue','colourSource':'photo',
-         'photoColour':'blue','photoColourConfidence':.91,'photoColourCheckedAt':12345,
-         'photoHash':{'p':'0'*16},'price':25000,'manualFields':[]}
-    monkeypatch.setattr(server,'state',{'listings':{'m2':car}})
-    server.update_listing({'id':'m2','site':'autotrader','title':'BMW M2',
-                           'image':'https://images.atcdn.co.uk/new.jpg',
-                           'colourSource':'unknown','price':25000},'now')
-    assert car['colourSource']=='unknown' and not car.get('colour')
-    assert 'photoColour' not in car and 'photoHash' not in car
+    car={"id":"m2","site":"autotrader","title":"BMW M2",
+         "url":"https://www.autotrader.co.uk/car-details/202611027550673",
+         "image":"https://images.atcdn.co.uk/old.jpg",
+         "colour":"blue","colourSource":"photo",
+         "photoHash":{"p":"0"*16},"price":25000,"manualFields":[]}
+    monkeypatch.setattr(server,"state",{"listings":{"m2":car}})
+    server.update_listing({"id":"m2","site":"autotrader","title":"BMW M2",
+                           "image":"https://images.atcdn.co.uk/new.jpg",
+                           "colourSource":"unknown","price":25000},"now")
+    assert car["colourSource"] == "unknown"
+    assert not car.get("colour")
+    assert "photoHash" not in car

@@ -22,6 +22,19 @@ const RESULT_FILTERS = ['resultPriceMin','resultPriceMax','resultYearMin','resul
   'resultBhpMin','resultBhpMax','resultColour','resultTransmission','resultDistanceMax'];
 const COLOUR_CHOICES = ['Black','White','Silver','Grey','Blue','Red','Green','Yellow','Orange','Purple','Brown','Gold','Beige','Other'];
 let scanBusy = false, abortScan = false, scanText = '', scanSubtext = '';
+let scanSearchIds = [];
+let facebookStatusLoaded = false;
+// Cache only state-derived groups. UI filters are evaluated live on each change.
+let derivedRevision = null;
+const derivedVisibleIds = new Map(), derivedSearchGroups = new Map();
+const derivedDisplayGroups = new Map(), derivedStats = new Map();
+const derivedResultGroups = new Map();
+function resetDerivedCache() {
+  if (derivedRevision === revision) return;
+  derivedRevision = revision;
+  derivedVisibleIds.clear(); derivedSearchGroups.clear();
+  derivedDisplayGroups.clear(); derivedStats.clear(); derivedResultGroups.clear();
+}
 
 let resultsLayout = 'list';
 let listingMap = null, listingMapLayer = null;
@@ -62,6 +75,7 @@ function accept(payload) {
     abortScan=!!payload.job.stop;
     scanText=payload.job.label || '';
     scanSubtext=payload.job.detail || '';
+    scanSearchIds=scanBusy ? (payload.job.searchIds || []) : [];
   }
 }
 async function api(url, options={}) {
@@ -77,7 +91,10 @@ async function api(url, options={}) {
 async function load() {
   const payload=await api('/api/state');
   accept(payload); render();
-  fbLoadStatus();
+  if (!facebookStatusLoaded) {
+    facebookStatusLoaded = true;
+    void fbLoadStatus();
+  }
 }
 function toast(msg, isError = false) {
   const el = document.createElement('div'); el.className = 'toast' + (isError ? ' error' : '');
@@ -167,8 +184,12 @@ function searchHiddenIds(search) {
   return new Set(state.hiddenBySearch?.[search?.id] || []);
 }
 function groupedSearchCars(search) {
+  resetDerivedCache();
+  if (derivedSearchGroups.has(search.id)) return derivedSearchGroups.get(search.id);
   const ids=new Set([...matchingSearchIds(search),...searchHiddenIds(search)]);
-  return grouped([...ids].map(id=>state.listings[id]).filter(Boolean));
+  const groups=grouped([...ids].map(id=>state.listings[id]).filter(Boolean));
+  derivedSearchGroups.set(search.id, groups);
+  return groups;
 }
 function hiddenSearchGroups(search) {
   if (!search) return [];
@@ -177,6 +198,8 @@ function hiddenSearchGroups(search) {
     group.some(row=>hidden.has(row.id)));
 }
 function visibleSearchIds(search) {
+  resetDerivedCache();
+  if (derivedVisibleIds.has(search.id)) return derivedVisibleIds.get(search.id);
   const hidden=searchHiddenIds(search);
   const ids=matchingSearchIds(search);
   const groups=groupedSearchCars(search);
@@ -184,10 +207,19 @@ function visibleSearchIds(search) {
   // in this search, while it remains visible in other searches.
   const blocked=new Set(groups.filter(group=>group.some(row=>hidden.has(row.id)))
     .flatMap(group=>group.map(row=>row.id)));
-  return ids.filter(id=>!blocked.has(id));
+  const visible=ids.filter(id=>!blocked.has(id));
+  derivedVisibleIds.set(search.id,visible);
+  return visible;
 }
 function currentIds() {
   return [...new Set(state.searches.flatMap(visibleSearchIds))];
+}
+function visibleGroupedCars(search) {
+  resetDerivedCache();
+  if (derivedDisplayGroups.has(search.id)) return derivedDisplayGroups.get(search.id);
+  const groups=grouped(visibleSearchIds(search).map(id=>state.listings[id]).filter(Boolean));
+  derivedDisplayGroups.set(search.id,groups);
+  return groups;
 }
 function getSearch() { return view.startsWith('search:') ? state.searches.find(s => s.id === view.slice(7)) : null; }
 function autotraderWriteoff(item) {
@@ -448,19 +480,37 @@ function statusSets() {
   const list = getSearch() ? [getSearch()] : state.searches;
   return { newIds:new Set(list.flatMap(s => s.lastReport?.newIds || [])), changedIds:new Set(list.flatMap(s => s.lastReport?.changedIds || [])) };
 }
+function savedCarCount() {
+  resetDerivedCache();
+  if (derivedStats.has('savedCount')) return derivedStats.get('savedCount');
+  const count=grouped(Object.values(state.listings).filter(car=>car.saved)).length;
+  derivedStats.set('savedCount',count);
+  return count;
+}
+function baseGroupsForView(lists) {
+  resetDerivedCache();
+  if (!derivedResultGroups.has(view))
+    derivedResultGroups.set(view,grouped(lists));
+  return derivedResultGroups.get(view);
+}
 function liveStats() {
+  resetDerivedCache();
+  if (derivedStats.has(view)) return derivedStats.get(view);
   const ids = currentIds();
   const statuses = statusSets();
   const groups = grouped(ids.map(id => state.listings[id]).filter(Boolean));
-  return { carCount:groups.length, newCount:groups.filter(g => g.some(l => statuses.newIds.has(l.id))).length,
+  const stats={ carCount:groups.length, newCount:groups.filter(g => g.some(l => statuses.newIds.has(l.id))).length,
     changedCount:groups.filter(g => g.some(l => statuses.changedIds.has(l.id))).length,
-    savedCount:grouped(Object.values(state.listings).filter(l => l.saved)).length };
+    savedCount:savedCarCount() };
+  derivedStats.set(view,stats);
+  return stats;
 }
 
 function render() {
   if (getSearch() === null && view.startsWith('search:')) view = 'searches';
-  const search = getSearch(); const stats = liveStats();
+  const search = getSearch();
   const onSearchesPage = view === 'searches';
+  const stats = onSearchesPage ? {savedCount:savedCarCount()} : liveStats();
   $('metrics').classList.toggle('hidden', onSearchesPage);
   $('searchSources').classList.toggle('hidden', onSearchesPage);
   $('searchesPage').classList.toggle('hidden', !onSearchesPage);
@@ -473,7 +523,7 @@ function render() {
       search.filters.colours.map(x=>x[0].toUpperCase()+x.slice(1)).join(', ') +
       (search.filters.includeUnknownColours ? ' (including unknown).' : ' (confirmed only).') : '') : view === 'saved' ? 'Your saved cars, prices and private notes — regardless of search.' : onSearchesPage ? 'Check when each search last ran, review updates and open its results.' : 'Listings from all your searches, deduplicated in one place.';
   $('headingActions').innerHTML = search ? `<button class="button quiet" data-action="view" data-view="searches">← All searches</button><button class="button quiet" data-action="edit" data-id="${esc(search.id)}">✎ Edit search criteria</button><button class="button dark" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>↻ Refresh search</button>` : view === 'saved' ? `<button class="button dark" data-action="add-manual">＋ Add car by URL</button><button class="button quiet" data-action="share-saved">↗ Share saved cars</button><button class="button quiet" data-action="export">↓ Export backup</button>` : onSearchesPage ? `<button class="button dark" data-action="new">＋ New search</button><button class="button quiet" data-action="refresh-all" ${scanBusy || !state.searches.length ? 'disabled':''}>↻ Refresh all</button>` : `<button class="button dark" data-action="refresh-all" ${scanBusy || !state.searches.length ? 'disabled':''}>↻ Refresh all searches</button>`;
-  $('metrics').innerHTML = `<div class="metric"><div class="metric-label">${search ? 'Sources' : view === 'saved' ? 'Saved vehicles' : 'Car searches'}</div><strong>${search ? search.links.length : view === 'saved' ? stats.savedCount : state.searches.length}</strong><span>${search ? 'across supported sites' : view === 'saved' ? 'kept across every search' : 'tracked in one dashboard'}</span></div><div class="metric"><div class="metric-label">${view === 'saved' ? 'Live scan vehicles' : 'Cars tracked'}</div><strong>${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).length : stats.carCount}</strong><span>deduplicated where confident</span></div><div class="metric"><div class="metric-label">Newly found</div><strong class="accent-green">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.newIds || []).includes(l.id))).length : stats.newCount}</strong><span>since the previous check</span></div><div class="metric"><div class="metric-label">Price changes</div><strong class="accent-amber">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.changedIds || []).includes(l.id))).length : stats.changedCount}</strong><span>since the previous check</span></div>`;
+  if (!onSearchesPage) $('metrics').innerHTML = `<div class="metric"><div class="metric-label">${search ? 'Sources' : view === 'saved' ? 'Saved vehicles' : 'Car searches'}</div><strong>${search ? search.links.length : view === 'saved' ? stats.savedCount : state.searches.length}</strong><span>${search ? 'across supported sites' : view === 'saved' ? 'kept across every search' : 'tracked in one dashboard'}</span></div><div class="metric"><div class="metric-label">${view === 'saved' ? 'Live scan vehicles' : 'Cars tracked'}</div><strong>${search ? visibleGroupedCars(search).length : stats.carCount}</strong><span>deduplicated where confident</span></div><div class="metric"><div class="metric-label">Newly found</div><strong class="accent-green">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.newIds || []).includes(l.id))).length : stats.newCount}</strong><span>since the previous check</span></div><div class="metric"><div class="metric-label">Price changes</div><strong class="accent-amber">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.changedIds || []).includes(l.id))).length : stats.changedCount}</strong><span>since the previous check</span></div>`;
   renderNav();
   renderProgress();
   if (onSearchesPage) {
@@ -486,7 +536,7 @@ function render() {
 
 function summaryForSearch(search) {
   // Count vehicles (not duplicated adverts), in line with the opened results.
-  const cars = grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean));
+  const cars = visibleGroupedCars(search);
   const newIds = new Set(search.lastReport?.newIds || []);
   const changedIds = new Set(search.lastReport?.changedIds || []);
   const added = cars.filter(group => group.some(car => newIds.has(car.id))).length;
@@ -511,7 +561,8 @@ function renderSearchesPage() {
     const details = search.lastChecked ? `${older(search.lastChecked)} · ${lastRun}` : 'Not checked yet';
     const updatesSummary = stats.updates ?
       `<small>${stats.added} new · ${stats.priceChanges} price changes</small>` : '<small>No updates since last scan</small>';
-    return `<article class="saved-search-row">
+    const refreshing=scanBusy && scanSearchIds.includes(search.id);
+    return `<article class="saved-search-row ${refreshing?'is-refreshing':''}">
       <div class="saved-search-main">
         <h2>${esc(search.name)}</h2>
         <div class="saved-search-sites">${[...new Set((search.links || []).map(link => link.site))].map(site => displaySite(site, 'mini')).join('')}</div>
@@ -522,15 +573,35 @@ function renderSearchesPage() {
         <div><dt>Updates</dt><dd>${stats.updates}${updatesSummary}</dd></div>
       </dl>
       <div class="saved-search-actions">
-        <button class="button quiet" type="button" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>↻ Refresh now</button>
+        <span class="saved-search-progress" data-refresh-status="${esc(search.id)}" role="status" aria-live="polite">${refreshing?'Refreshing…':''}</span>
+        <button class="button quiet" type="button" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>${refreshing?'↻ Refreshing…':'↻ Refresh now'}</button>
         <button class="button dark" type="button" data-action="view" data-view="search:${esc(search.id)}">Open results →</button>
       </div>
     </article>`;
   }).join('')}</div>`;
 }
+function syncSearchRefreshControls() {
+  // Status polling must not rebuild every card and shared header.
+  for (const button of $('searchesPage').querySelectorAll('button[data-action="refresh"]')) {
+    const active = scanBusy && scanSearchIds.includes(button.dataset.id);
+    const text = active ? '↻ Refreshing…' : '↻ Refresh now';
+    if (button.textContent !== text) button.textContent=text;
+    button.disabled=scanBusy;
+    button.closest('.saved-search-row')?.classList.toggle('is-refreshing',active);
+    const indicator=$('searchesPage').querySelectorAll('[data-refresh-status]');
+    for (const item of indicator) {
+      if (item.dataset.refreshStatus !== button.dataset.id) continue;
+      const status=active ? 'Refreshing' + (scanSubtext ? ' · '+scanSubtext : '…') : '';
+      if (item.textContent !== status) item.textContent=status;
+    }
+  }
+}
 function renderNav() {
   const nav = $('searchNav');
-  nav.innerHTML = `<button class="nav-item ${view === 'overview'?'selected':''}" data-action="view" data-view="overview"><span class="nav-icon">⌂</span><span class="nav-text">Overview</span></button><button class="nav-item ${view === 'searches' || view.startsWith('search:')?'selected':''}" data-action="view" data-view="searches"><span class="nav-icon">⌕</span><span class="nav-text">Searches</span><span class="nav-number">${state.searches.length}</span></button><button class="nav-item ${view === 'saved'?'selected':''}" data-action="view" data-view="saved"><span class="nav-icon">♡</span><span class="nav-text">Saved cars</span><span class="nav-number">${liveStats().savedCount}</span></button>`;
+  const markup = `<button class="nav-item ${view === 'overview'?'selected':''}" data-action="view" data-view="overview"><span class="nav-icon">⌂</span><span class="nav-text">Overview</span></button><button class="nav-item ${view === 'searches' || view.startsWith('search:')?'selected':''}" data-action="view" data-view="searches"><span class="nav-icon">⌕</span><span class="nav-text">Searches</span><span class="nav-number">${state.searches.length}</span></button><button class="nav-item ${view === 'saved'?'selected':''}" data-action="view" data-view="saved"><span class="nav-icon">♡</span><span class="nav-text">Saved cars</span><span class="nav-number">${savedCarCount()}</span></button>`;
+  // Only mutate the navigation when its view/count actually changed. The
+  // shared DriveHub header mirrors this element via MutationObserver.
+  if (nav.innerHTML !== markup) nav.innerHTML = markup;
 }
 function renderSources(search) {
   const el = $('searchSources');
@@ -568,9 +639,7 @@ function exteriorColour(car) {
   // Server supplies broad, vetted exterior colours with provenance.
   // Previously inferred black leather/wheel colours have no source: do not
   // treat those legacy values as a verified exterior until rescanned.
-  if (!car || !['explicit','title','manual','photo'].includes(car.colourSource)) return '';
-  // Reject weak previously saved estimates as well as new photo observations.
-  if (car.colourSource === 'photo' && Number(car.photoColourConfidence || 0) < .86) return '';
+  if (!car || !['explicit','title','manual'].includes(car.colourSource)) return '';
   const value = String(car.colour || '').toLowerCase().trim();
   const canonical = value.replace(/gray/g,'grey');
   return COLOUR_CHOICES.some(name => name.toLowerCase()===canonical)
@@ -685,13 +754,7 @@ function combinedCarDetails(group, preferred=null) {
     fields.colour.conflict || !fields.colour.value ? 'unknown' :
     group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='explicit')
       ? 'explicit' : group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='title')
-      ? 'title' : 'photo';
-  if (combined.colourSource === 'photo') {
-    // The matching colour may come from a different provider than focus.
-    combined.photoColourConfidence = Math.max(0, ...group
-      .filter(row => row.colourSource === 'photo' && exteriorColour(row) === fields.colour.value)
-      .map(row => Number(row.photoColourConfidence) || 0));
-  }
+      ? 'title' : 'unknown';
   // This object's fields and sources are for presentation only.
   combined.combinedMeta={
     fields,sources:group.map(row=>({
@@ -788,7 +851,8 @@ async function ensureDistanceLocations(cars) {
         for (const loc of chunk) distanceFailures.add(mapLocationKey(loc));
         // Do not hammer geocoding repeatedly if it is temporarily offline.
       }
-      if (wantsDistanceCoordinates()) renderResults();
+      // Avoid re-building every listing card after every 25 geocodes.
+      // Apply all resolved locations in one render when the batch finishes.
     }
   } finally {
     for (const loc of locations) distanceLookups.delete(mapLocationKey(loc));
@@ -812,7 +876,7 @@ function renderResults() {
   const keyword = $('keywordFilter').value.toLowerCase().trim();
   const site = $('sourceFilter').value;
   const changesOnly = $('changesOnly').checked && view !== 'saved';
-  let groups = grouped(lists).filter(g =>
+  let groups = baseGroupsForView(lists).filter(g =>
     (site === 'all' || g.some(l => l.site === site)) &&
     (!keyword || g.some(l => (l.title+' '+(l.location || '')+' '+(l.notes || '')).toLowerCase().includes(keyword))) &&
     (!changesOnly || g.some(l => statuses.newIds.has(l.id) || statuses.changedIds.has(l.id))) &&
@@ -1129,7 +1193,7 @@ function renderCard(g, statuses, inHiddenSection=false) {
     car.year && !inTitle(car.year) ? `<span>${car.year}</span>` : '',
     mileage && !inTitle(mileage) ? `<span>${esc(mileage)}</span>` : '',
     locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel)}${car.combinedMeta.fields.location.conflict?' · multiple locations':''}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
-    exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='photo'?'Estimated from photo (not verified)':car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}${car.colourSource==='photo'?' · estimated':''}</span>` : '',
+    exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}</span>` : '',
     car.bhp && !inTitle(`${car.bhp} bhp`) ? `<span>${esc(car.bhp)} bhp</span>` : '',
     transmission && !inTitle(transmission) && !inTitle('DCT') && !inTitle('DSG') && !inTitle('PDK') ? `<span>${transmission==='automatic'?'Automatic':'Manual'}</span>` : ''
   ].filter(Boolean).join('');
@@ -1144,7 +1208,7 @@ function renderCard(g, statuses, inHiddenSection=false) {
     <div class="car-price"><strong>${fmtPrice(cheapest.price)}</strong>${changed && diff!==0 ? `<span class="price-move ${diff<0?'drop':'rise'}">${diff<0?'↓':'↑'} ${fmtPrice(Math.abs(diff))} ${diff<0?'drop':'rise'}</span>` : ''}</div>
     ${note ? `<div class="note-preview">✎ ${esc(note.length > 115 ? note.slice(0,115)+'…' : note)}</div>` : ''}
     <div class="listing-links" aria-label="Adverts available for this car">${g.map(item => `<button type="button" class="source-preview" data-action="car-source" data-ids="${esc(ids.join(','))}" data-id="${esc(item.id)}" title="Preview ${esc(SITE_NAMES[item.site] || item.site)} advert in this page">${esc(SITE_NAMES[item.site] || item.site)}${g.length > 1 && item.price ? ' · '+fmtPrice(item.price) : ''}</button>`).join('')}</div>
-    <div class="card-footer">${getSearch()? `<button class="card-tool" data-action="hide-listing" data-hidden="${inHiddenSection?'true':'false'}" data-search-id="${esc(getSearch().id)}" data-ids="${esc(ids.join(','))}">${inHiddenSection?'↶ Restore':'◌ Hide'}</button>` : ''}<button class="card-tool" data-action="note" data-ids="${esc(ids.join(','))}">✎ ${note?'Edit note':'Add note'}</button>${saved ? `<button class="card-tool" data-action="share-car" data-ids="${esc(ids.join(','))}">↗ Share</button><button class="card-tool" data-action="edit-car" data-id="${esc(g.find(x=>x.saved)?.id || car.id)}">✎ Edit details</button>` : ''}${mergeAction}${g.length > 1 ? `<button class="card-tool" data-action="separate" data-ids="${esc(ids.join(','))}" title="These are different cars. Keep their adverts separate in future.">Not same car</button>` : ''}${g.some(x => state.manualDuplicates[x.id]) ? `<button class="card-tool" data-action="unmerge" data-ids="${esc(ids.join(','))}">Unmerge</button>` : ''}${hasSeparatedMatches(ids) ? `<button class="card-tool" data-action="allow-match" data-ids="${esc(ids.join(','))}" title="Remove your automatic duplicate exclusions for this advert">Allow matching</button>` : ''}<span class="first-seen">Found ${when(car.firstSeen)}</span></div>
+    <div class="card-footer">${getSearch()? `<button class="card-tool" data-action="hide-listing" data-hidden="${inHiddenSection?'true':'false'}" data-search-id="${esc(getSearch().id)}" data-ids="${esc(ids.join(','))}">${inHiddenSection?'↶ Restore':'◌ Hide'}</button>` : ''}<button class="card-tool" data-action="note" data-ids="${esc(ids.join(','))}">✎ ${note?'Edit note':'Add note'}</button>${saved ? `<button class="card-tool" data-action="share-car" data-ids="${esc(ids.join(','))}">↗ Share</button>` : ''}<button class="card-tool" data-action="edit-car" data-id="${esc(g.find(x=>x.saved)?.id || car.id)}">✎ Edit details</button>${mergeAction}${g.length > 1 ? `<button class="card-tool" data-action="separate" data-ids="${esc(ids.join(','))}" title="These are different cars. Keep their adverts separate in future.">Not same car</button>` : ''}${g.some(x => state.manualDuplicates[x.id]) ? `<button class="card-tool" data-action="unmerge" data-ids="${esc(ids.join(','))}">Unmerge</button>` : ''}${hasSeparatedMatches(ids) ? `<button class="card-tool" data-action="allow-match" data-ids="${esc(ids.join(','))}" title="Remove your automatic duplicate exclusions for this advert">Allow matching</button>` : ''}<span class="first-seen">Found ${when(car.firstSeen)}</span></div>
     </div></article>`;
 }
 
@@ -1224,7 +1288,7 @@ function renderCarDetails() {
           <a class="button dark" href="${esc(linkUrl(car.url))}" target="_blank" rel="noopener noreferrer">Open original advert ↗</a>
           <button class="button quiet" data-action="save" data-ids="${esc(detailIds.join(','))}">${saved?'♥ Saved':'♡ Save car'}</button>
           <button class="button quiet" data-action="note" data-ids="${esc(detailIds.join(','))}">✎ ${note?'Edit notes':'Add notes'}</button>
-          ${saved ? `<button class="button quiet" data-action="share-car" data-ids="${esc(detailIds.join(','))}">↗ Share car</button><button class="button quiet" data-action="edit-car" data-id="${esc(car.saved ? car.id : variants.find(x=>x.saved)?.id || car.id)}">✎ Edit details</button>` : ''}
+          ${saved ? `<button class="button quiet" data-action="share-car" data-ids="${esc(detailIds.join(','))}">↗ Share car</button>` : ''}<button class="button quiet" data-action="edit-car" data-id="${esc(car.id)}">✎ Edit details</button>
           ${getSearch() ? `<button class="button quiet" data-action="hide-listing" data-search-id="${esc(getSearch().id)}" data-hidden="${variants.some(x=>searchHiddenIds(getSearch()).has(x.id))?'true':'false'}" data-ids="${esc(detailIds.join(','))}">${variants.some(x=>searchHiddenIds(getSearch()).has(x.id))?'↶ Restore to results':'◌ Hide from this search'}</button>` : ''}
           ${saved ? `<button class="button quiet" data-action="enrich" data-ids="${esc(detailIds.join(','))}">↻ Refresh missing details</button>` : ''}
         </div>
@@ -1521,9 +1585,9 @@ const MANUAL_NUMERIC_FIELDS = ['price','year','mileage','engine','bhp'];
 function openManualCarDialog(itemId = null) {
   manualEditId = itemId;
   const car = itemId ? state.listings[itemId] : null;
-  if (itemId && !car?.saved) { toast('Select a saved car to edit.', true); return; }
+  if (itemId && !car) { toast('This listing is no longer available.', true); return; }
   $('manualCarForm').reset();
-  $('manualCarModalTitle').textContent = car ? 'Edit saved car details' : 'Add car from a listing URL';
+  $('manualCarModalTitle').textContent = car ? 'Edit car details' : 'Add car from a listing URL';
   $('manualCarHelp').textContent = car
     ? 'Update this car’s information. Your changes take precedence over later website scans. Notes stay private.'
     : 'Paste an individual advert link from Auto Trader, eBay, PistonHeads or Facebook. Save it now; the app will try to fetch the missing details automatically. You can fill in anything yourself.';
@@ -1550,7 +1614,7 @@ async function commitManualCar() {
   for (const field of MANUAL_TEXT_FIELDS) {
     const value = $(manualFieldId(field)).value.trim();
     // Blank fields for newly pasted URLs must remain available for
-    // automatic enrichment; editing a saved car can explicitly clear them.
+    // automatic enrichment; editing any tracked car can explicitly clear them.
     if (manualEditId || value) fields[field] = value;
   }
   for (const field of MANUAL_NUMERIC_FIELDS) {
@@ -1571,10 +1635,12 @@ async function commitManualCar() {
       });
     accept(payload);
     hide('manualCarDialog');
-    view = 'saved';
-    $('sortFilter').value = 'seen';
+    if (!manualEditId) {
+      view = 'saved';
+      $('sortFilter').value = 'seen';
+    }
     render();
-    toast(manualEditId ? 'Manual car details saved. Future scans will preserve your changes.' :
+    toast(manualEditId ? 'Car details updated without changing saved status. Future scans will preserve your changes.' :
       payload.alreadyPresent ? 'That advert was already tracked. It is now in saved cars.' :
       'Car added to Saved cars. Checking the advert for any missing details.');
   } catch(error) {
@@ -1701,6 +1767,7 @@ async function refresh(searchId = null) {
   try {
     const payload = await api('/api/refresh',{method:'POST',body:JSON.stringify({searchId})});
     scanBusy=true; abortScan=false; scanText=payload.job.label; scanSubtext='';
+    scanSearchIds=payload.job.searchIds || (searchId ? [searchId] : state.searches.map(s=>s.id));
     seenRunning=true;
     setNotice(''); render();
   } catch (error) { toast('Could not start refresh: ' + error.message,true); }
@@ -1715,8 +1782,13 @@ async function syncStatus() {
     scanText=payload.job?.label || '';
     scanSubtext=payload.job?.detail || '';
     abortScan=!!payload.job?.stop;
+    scanSearchIds=scanBusy ? (payload.job?.searchIds || []) : [];
     if (payload.revision !== revision) await load();
-    else if (scanBusy || wasBusy !== scanBusy) render();
+    else if (wasBusy !== scanBusy) render();
+    else {
+      renderProgress();
+      syncSearchRefreshControls();
+    }
     if (wasBusy && !scanBusy) {
       setNotice(payload.job?.message || 'Refresh finished.');
       toast(payload.job?.message || 'Refresh complete.', /failed|warnings|stopped/i.test(payload.job?.message||''));

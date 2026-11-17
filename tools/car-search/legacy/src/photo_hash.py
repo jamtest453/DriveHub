@@ -14,7 +14,6 @@ from urllib.parse import urlsplit
 
 import httpx
 from PIL import Image, ImageOps, UnidentifiedImageError
-from .image_colour import estimate_paint
 
 MAX_BYTES = 2_500_000
 MAX_PIXELS = 8_000_000
@@ -105,8 +104,7 @@ def image_fingerprint(raw):
             if values[y*9+x] > values[y*9+x+1]:
                 dhash |= 1 << (y*8+x)
 
-    return {"p": f"{bits:016x}", "d": f"{dhash:016x}", "rgb": mean,
-            "paint": estimate_paint(rgb)}
+    return {"p": f"{bits:016x}", "d": f"{dhash:016x}", "rgb": mean}
 
 
 async def download_fingerprint(url):

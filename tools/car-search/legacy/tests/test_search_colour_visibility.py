@@ -20,6 +20,13 @@ def test_search_requires_confirmed_colour_by_default():
 def test_existing_search_results_update_without_rescan(tmp_path):
     source=Path(__file__).resolve().parents[1]/"public/dashboard.js"
     cases=r"""
+let revision=0, derivedRevision=null;
+const derivedVisibleIds=new Map(),derivedSearchGroups=new Map();
+function resetDerivedCache(){
+ if(derivedRevision===revision)return;
+ derivedRevision=revision;
+ derivedVisibleIds.clear();derivedSearchGroups.clear();
+}
 const state = {
   listings:{
     A:{id:'A',site:'autotrader',group:'one',colour:'blue',colourSource:'explicit'},
@@ -46,15 +53,15 @@ const check=(label,actual,expected)=>{
 };
 check('blue search includes missing-colour same-car source',ids(),'A,B');
 check('overview uses matching results',currentIds().sort().join(','),'A,B');
-search.filters.colours=['red'];
+search.filters.colours=['red']; revision++;
 check('edit to red immediately applies to old snapshots',ids(),'C');
-search.filters.colours=['blue'];
-search.filters.includeUnknownColours=true;
+search.filters.colours=['blue']; revision++;
+search.filters.includeUnknownColours=true; revision++;
 check('explicitly include unknown colour',ids(),'A,B,D');
-search.filters.colours=[];
+search.filters.colours=[]; revision++;
 check('all colours unrestricted',ids(),'A,B,C,D');
-search.filters.colours=['grey'];
-search.filters.includeUnknownColours=false;
+search.filters.colours=['grey']; revision++;
+search.filters.includeUnknownColours=false; revision++;
 check('no wrong colour slips through',ids(),'');
 console.log('Saved search colour snapshot checks passed');
 """

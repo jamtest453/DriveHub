@@ -16,6 +16,13 @@ const state={
     d:{id:'d',model:'one',title:'BMW M2'}
   }
 };
+let revision=0, derivedRevision=null;
+const derivedVisibleIds=new Map(),derivedSearchGroups=new Map();
+function resetDerivedCache(){
+ if(derivedRevision===revision)return;
+ derivedRevision=revision;
+ derivedVisibleIds.clear();derivedSearchGroups.clear();
+}
 const available={
   s1:['a','b','c','d'],
   s2:['a','b','c']
@@ -41,6 +48,7 @@ eq('other search has no hidden section',hiddenSearchGroups(state.searches[1]),[]
 eq('overview keeps car visible through second search',currentIds(),['c','a','b']);
 eq('saved record is unchanged',state.listings.a.saved,true);
 state.hiddenBySearch.s1=[];
+revision++;
 eq('restoring first search reveals all adverts',
    visibleSearchIds(state.searches[0]),['a','b','c','d']);
 console.log('Per-search hidden grouping passed');
