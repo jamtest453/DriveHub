@@ -28,11 +28,12 @@ let facebookStatusLoaded = false;
 let derivedRevision = null;
 const derivedVisibleIds = new Map(), derivedSearchGroups = new Map();
 const derivedDisplayGroups = new Map(), derivedStats = new Map();
+const derivedResultGroups = new Map();
 function resetDerivedCache() {
   if (derivedRevision === revision) return;
   derivedRevision = revision;
   derivedVisibleIds.clear(); derivedSearchGroups.clear();
-  derivedDisplayGroups.clear(); derivedStats.clear();
+  derivedDisplayGroups.clear(); derivedStats.clear(); derivedResultGroups.clear();
 }
 
 let resultsLayout = 'list';
@@ -479,6 +480,19 @@ function statusSets() {
   const list = getSearch() ? [getSearch()] : state.searches;
   return { newIds:new Set(list.flatMap(s => s.lastReport?.newIds || [])), changedIds:new Set(list.flatMap(s => s.lastReport?.changedIds || [])) };
 }
+function savedCarCount() {
+  resetDerivedCache();
+  if (derivedStats.has('savedCount')) return derivedStats.get('savedCount');
+  const count=grouped(Object.values(state.listings).filter(car=>car.saved)).length;
+  derivedStats.set('savedCount',count);
+  return count;
+}
+function baseGroupsForView(lists) {
+  resetDerivedCache();
+  if (!derivedResultGroups.has(view))
+    derivedResultGroups.set(view,grouped(lists));
+  return derivedResultGroups.get(view);
+}
 function liveStats() {
   resetDerivedCache();
   if (derivedStats.has(view)) return derivedStats.get(view);
@@ -487,15 +501,16 @@ function liveStats() {
   const groups = grouped(ids.map(id => state.listings[id]).filter(Boolean));
   const stats={ carCount:groups.length, newCount:groups.filter(g => g.some(l => statuses.newIds.has(l.id))).length,
     changedCount:groups.filter(g => g.some(l => statuses.changedIds.has(l.id))).length,
-    savedCount:grouped(Object.values(state.listings).filter(l => l.saved)).length };
+    savedCount:savedCarCount() };
   derivedStats.set(view,stats);
   return stats;
 }
 
 function render() {
   if (getSearch() === null && view.startsWith('search:')) view = 'searches';
-  const search = getSearch(); const stats = liveStats();
+  const search = getSearch();
   const onSearchesPage = view === 'searches';
+  const stats = onSearchesPage ? {savedCount:savedCarCount()} : liveStats();
   $('metrics').classList.toggle('hidden', onSearchesPage);
   $('searchSources').classList.toggle('hidden', onSearchesPage);
   $('searchesPage').classList.toggle('hidden', !onSearchesPage);
@@ -508,7 +523,7 @@ function render() {
       search.filters.colours.map(x=>x[0].toUpperCase()+x.slice(1)).join(', ') +
       (search.filters.includeUnknownColours ? ' (including unknown).' : ' (confirmed only).') : '') : view === 'saved' ? 'Your saved cars, prices and private notes — regardless of search.' : onSearchesPage ? 'Check when each search last ran, review updates and open its results.' : 'Listings from all your searches, deduplicated in one place.';
   $('headingActions').innerHTML = search ? `<button class="button quiet" data-action="view" data-view="searches">← All searches</button><button class="button quiet" data-action="edit" data-id="${esc(search.id)}">✎ Edit search criteria</button><button class="button dark" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>↻ Refresh search</button>` : view === 'saved' ? `<button class="button dark" data-action="add-manual">＋ Add car by URL</button><button class="button quiet" data-action="share-saved">↗ Share saved cars</button><button class="button quiet" data-action="export">↓ Export backup</button>` : onSearchesPage ? `<button class="button dark" data-action="new">＋ New search</button><button class="button quiet" data-action="refresh-all" ${scanBusy || !state.searches.length ? 'disabled':''}>↻ Refresh all</button>` : `<button class="button dark" data-action="refresh-all" ${scanBusy || !state.searches.length ? 'disabled':''}>↻ Refresh all searches</button>`;
-  $('metrics').innerHTML = `<div class="metric"><div class="metric-label">${search ? 'Sources' : view === 'saved' ? 'Saved vehicles' : 'Car searches'}</div><strong>${search ? search.links.length : view === 'saved' ? stats.savedCount : state.searches.length}</strong><span>${search ? 'across supported sites' : view === 'saved' ? 'kept across every search' : 'tracked in one dashboard'}</span></div><div class="metric"><div class="metric-label">${view === 'saved' ? 'Live scan vehicles' : 'Cars tracked'}</div><strong>${search ? visibleGroupedCars(search).length : stats.carCount}</strong><span>deduplicated where confident</span></div><div class="metric"><div class="metric-label">Newly found</div><strong class="accent-green">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.newIds || []).includes(l.id))).length : stats.newCount}</strong><span>since the previous check</span></div><div class="metric"><div class="metric-label">Price changes</div><strong class="accent-amber">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.changedIds || []).includes(l.id))).length : stats.changedCount}</strong><span>since the previous check</span></div>`;
+  if (!onSearchesPage) $('metrics').innerHTML = `<div class="metric"><div class="metric-label">${search ? 'Sources' : view === 'saved' ? 'Saved vehicles' : 'Car searches'}</div><strong>${search ? search.links.length : view === 'saved' ? stats.savedCount : state.searches.length}</strong><span>${search ? 'across supported sites' : view === 'saved' ? 'kept across every search' : 'tracked in one dashboard'}</span></div><div class="metric"><div class="metric-label">${view === 'saved' ? 'Live scan vehicles' : 'Cars tracked'}</div><strong>${search ? visibleGroupedCars(search).length : stats.carCount}</strong><span>deduplicated where confident</span></div><div class="metric"><div class="metric-label">Newly found</div><strong class="accent-green">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.newIds || []).includes(l.id))).length : stats.newCount}</strong><span>since the previous check</span></div><div class="metric"><div class="metric-label">Price changes</div><strong class="accent-amber">${search ? grouped(visibleSearchIds(search).map(id => state.listings[id]).filter(Boolean)).filter(g => g.some(l => (search.lastReport?.changedIds || []).includes(l.id))).length : stats.changedCount}</strong><span>since the previous check</span></div>`;
   renderNav();
   renderProgress();
   if (onSearchesPage) {
@@ -583,7 +598,7 @@ function syncSearchRefreshControls() {
 }
 function renderNav() {
   const nav = $('searchNav');
-  const markup = `<button class="nav-item ${view === 'overview'?'selected':''}" data-action="view" data-view="overview"><span class="nav-icon">⌂</span><span class="nav-text">Overview</span></button><button class="nav-item ${view === 'searches' || view.startsWith('search:')?'selected':''}" data-action="view" data-view="searches"><span class="nav-icon">⌕</span><span class="nav-text">Searches</span><span class="nav-number">${state.searches.length}</span></button><button class="nav-item ${view === 'saved'?'selected':''}" data-action="view" data-view="saved"><span class="nav-icon">♡</span><span class="nav-text">Saved cars</span><span class="nav-number">${liveStats().savedCount}</span></button>`;
+  const markup = `<button class="nav-item ${view === 'overview'?'selected':''}" data-action="view" data-view="overview"><span class="nav-icon">⌂</span><span class="nav-text">Overview</span></button><button class="nav-item ${view === 'searches' || view.startsWith('search:')?'selected':''}" data-action="view" data-view="searches"><span class="nav-icon">⌕</span><span class="nav-text">Searches</span><span class="nav-number">${state.searches.length}</span></button><button class="nav-item ${view === 'saved'?'selected':''}" data-action="view" data-view="saved"><span class="nav-icon">♡</span><span class="nav-text">Saved cars</span><span class="nav-number">${savedCarCount()}</span></button>`;
   // Only mutate the navigation when its view/count actually changed. The
   // shared DriveHub header mirrors this element via MutationObserver.
   if (nav.innerHTML !== markup) nav.innerHTML = markup;
@@ -836,7 +851,8 @@ async function ensureDistanceLocations(cars) {
         for (const loc of chunk) distanceFailures.add(mapLocationKey(loc));
         // Do not hammer geocoding repeatedly if it is temporarily offline.
       }
-      if (wantsDistanceCoordinates()) renderResults();
+      // Avoid re-building every listing card after every 25 geocodes.
+      // Apply all resolved locations in one render when the batch finishes.
     }
   } finally {
     for (const loc of locations) distanceLookups.delete(mapLocationKey(loc));
@@ -860,7 +876,7 @@ function renderResults() {
   const keyword = $('keywordFilter').value.toLowerCase().trim();
   const site = $('sourceFilter').value;
   const changesOnly = $('changesOnly').checked && view !== 'saved';
-  let groups = grouped(lists).filter(g =>
+  let groups = baseGroupsForView(lists).filter(g =>
     (site === 'all' || g.some(l => l.site === site)) &&
     (!keyword || g.some(l => (l.title+' '+(l.location || '')+' '+(l.notes || '')).toLowerCase().includes(keyword))) &&
     (!changesOnly || g.some(l => statuses.newIds.has(l.id) || statuses.changedIds.has(l.id))) &&
