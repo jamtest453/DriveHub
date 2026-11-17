@@ -71,8 +71,9 @@ ctx.api=async(path,options)=>{
   }}]};
 };
 const first=show(raceGroups);
-await Promise.resolve();
-await Promise.resolve();
+// The async function runs in a separate VM microtask context. Flush one
+// event-loop tick before asserting the first network request has started.
+await new Promise(resolve=>setImmediate(resolve));
 assert.equal(raceCalls,1);
 await show(raceGroups);
 assert.equal(raceCalls,2,'map must continue resolving still-missing towns after an interrupted render');
