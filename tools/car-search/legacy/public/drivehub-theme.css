@@ -239,3 +239,19 @@ h1 { font-size: clamp(33px,3.5vw,48px); line-height: 1.05; }
 
 /* v142.31: active refresh is indicated only on its button and row. */
 .saved-search-row.is-refreshing{border-color:#82b9a8;background:#f8fcfa}
+
+/* v142.32: compact price/mileage comparison directly beside asking price. */
+.price-value-indicator{
+  display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;max-width:100%;white-space:nowrap;
+  border-radius:7px;border:1px solid transparent;
+  padding:4px 7px;font:800 10px/1.15 "Figtree",system-ui,sans-serif;
+  letter-spacing:.005em;vertical-align:middle;
+}
+.price-value-great{color:#105e40;background:#def2e5;border-color:#b7dec4}
+.price-value-good{color:#206849;background:#eaf5e8;border-color:#cce4cf}
+.price-value-fair{color:#65591d;background:#f7f3de;border-color:#e9dfad}
+.price-value-high{color:#935620;background:#fcf0e2;border-color:#ecd1b3}
+.price-value-poor{color:#963e3c;background:#fbe9e7;border-color:#edc6c2}
+.price-value-unrated{color:#657478;background:#f0f3f2;border-color:#dbe4e0}
+.car-price:has(.price-value-indicator){display:flex;align-items:center;gap:6px;flex-wrap:wrap}
