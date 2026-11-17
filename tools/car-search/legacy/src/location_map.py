@@ -21,9 +21,9 @@ UK_LON = (-9.0, 2.6)
 POSTCODE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b", re.I)
 OUTCODE = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]?$", re.I)
 DISTANCE_SUFFIX = re.compile(
-    r"\\s*(?:\\(\\s*(\\d{1,4}(?:\\.\\d+)?)\\s*(?:miles?|mi)\\s*\\)"
-    r"|[·,;|–—-]\\s*(\\d{1,4}(?:\\.\\d+)?)\\s*(?:miles?|mi)\\s*(?:away|from you)?"
-    r")\\s*$", re.I)
+    r"\s*(?:\(\s*(\d{1,4}(?:\.\d+)?)\s*(?:miles?|mi)\s*\)"
+    r"|[·,;|–—-]\s*(\d{1,4}(?:\.\d+)?)\s*(?:miles?|mi)\s*(?:away|from you)?"
+    r")\s*$", re.I)
 
 
 def distance_hint(raw):
@@ -40,7 +40,7 @@ def cache_key(raw):
     # v2 avoids reusing older negative results that ignored settlement type
     # and gave ambiguous names like Hayes the wrong candidate.
     postcode = POSTCODE.search(raw) if isinstance(raw, str) else None
-    exact = ("|postcode:" + re.sub(r"\\s+", "", postcode.group(1)).casefold()) if postcode else ""
+    exact = ("|postcode:" + re.sub(r"\s+", "", postcode.group(1)).casefold()) if postcode else ""
     # Keep postcode, county and distance clues in the lookup identity even
     # though the card's display label omits them.
     return cleaned + exact + ("|%.1fmi|placev4" % miles if miles else "|placev4")
@@ -89,7 +89,7 @@ def place_request(raw):
     """Return (type, value, disambiguation), preserving full postcodes."""
     full = POSTCODE.search(raw) if isinstance(raw, str) else None
     if full:
-        return ("postcode", re.sub(r"\\s+", "", full.group(1)).upper(), "")
+        return ("postcode", re.sub(r"\s+", "", full.group(1)).upper(), "")
     text = clean_location(raw)
     if not text:
         return None
