@@ -147,7 +147,7 @@ const cardCtx={
   Set,Intl,Math,SITE_NAMES:{autotrader:'Auto Trader'},
   combinedCarDetails:()=>car,matchingColourAdvert:()=>car,
   matchesResultFilters:()=>true,milesForGroup:()=>157.3,
-  effectiveTransmission:()=>'',exteriorColour:()=>'',bestPhotoMatch:()=>null,
+  effectiveTransmission:()=>'',exteriorColour:()=>'',bodyTypeForCar:()=>'',bestPhotoMatch:()=>null,
   imageUrl:()=>'',linkUrl:()=>'',getSearch:()=>null,
   hasSeparatedMatches:()=>false,when:()=> '17 Nov',
   fmtPrice:()=> '£24,500',esc:value=>String(value),
