@@ -119,6 +119,7 @@ class VehicleIdentity:
     model: str | None
     model_slug: str | None
     keywords: str
+    remainder: str
 
 
 def _has_phrase(text, phrase):
@@ -156,4 +157,4 @@ def resolve_vehicle_query(value):
                            if _has_phrase(remaining, g)), None)
         if generation:
             model_slug = "911-carrera-" + generation
-    return VehicleIdentity(make, slug, model, model_slug, remaining if not model else "")
+    return VehicleIdentity(make, slug, model, model_slug, remaining if not model else "", remaining)
