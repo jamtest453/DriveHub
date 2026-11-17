@@ -821,20 +821,48 @@ function geoMiles(a,b) {
     Math.cos(lat1)*Math.cos(lat2)*Math.sin((b.lng-a.lng)*rad/2)**2;
   return 3958.8*2*Math.asin(Math.min(1,Math.sqrt(p)));
 }
+function postcodeOnlyLocation(raw) {
+  // Only use a *full* postcode when there is no recognisable town.
+  // Partial postcodes like SK12/M2 must not be mistaken for place names.
+  const source=String(raw || '').trim();
+  const full=source.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i);
+  return full ? full[0].toUpperCase().replace(/\s+/g,' ') : '';
+}
 function cleanAdvertLocation(raw) {
-  // Never feed display-only qualifiers into map/geocoding requests. Some
-  // historic adverts include their distance or "multiple locations" as text.
-  let place=String(raw || '').trim();
-  place=place.replace(/\s*(?:[·,;–—-]\s*)?multiple locations\s*$/i,'')
-    .replace(/\s*\(\s*multiple locations\s*\)\s*$/i,'')
-    .replace(/\s*\(\s*\d+(?:\.\d+)?\s*(?:miles?|mi)\s*\)\s*$/i,'');
-  return place.trim();
+  // Treat distance hints, postcode fragments, and merge annotations as
+  // metadata, not part of the geographic place sent to the map service.
+  let place=String(raw || '').replace(/\s+/g,' ').trim();
+  if (!place) return '';
+  place=place.replace(/\s*(?:[·,;|–—-]\s*)?multiple locations\s*$/gi,'')
+    .replace(/\s*\(\s*multiple locations\s*\)\s*$/gi,'')
+    .replace(/\s*\(\s*\d+(?:\.\d+)?\s*(?:miles?|mi)\s*\)/gi,'')
+    .replace(/\s*(?:[·|,;–—-]\s*)?\d+(?:\.\d+)?\s*(?:miles?|mi)\s*(?:away|from you)?\s*$/gi,'')
+    .replace(/\b(?:post\s*code)\s*[:\-]?\s*/gi,'')
+    // Remove outward as well as complete postcodes when there IS a town.
+    .replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi,'')
+    .replace(/\b[A-Z]{1,2}\d[A-Z\d]?\b/gi,'')
+    .replace(/^(?:location\s*[:\-]?|located in|based in|near)\s*/i,'')
+    .replace(/(?:,\s*)?(?:United Kingdom|England|Scotland|Wales|UK)\s*$/gi,'')
+    .replace(/\(\s*\)/g,'')
+    .replace(/\s*[,;|·]\s*[,;|·]\s*/g,', ')
+    .replace(/\s+([,;])/g,'$1')
+    .replace(/[,;|·\-\s]+$/g,'')
+    .replace(/^[,;|·\-\s]+/g,'').trim();
+  if (!place || /^(?:multiple locations|unknown|not specified|various|n\/a|nationwide)$/i.test(place)) return '';
+  // Reject leftovers containing seller metadata, rather than searching
+  // for a fictional UK town.
+  if (/\b(?:miles?|postcode|multiple locations)\b/i.test(place) || /\d/.test(place)) return '';
+  return place;
 }
 function locationForCar(car) {
-  return cleanAdvertLocation(car?.location);
+  // Cards show only the locality, not a postcode or county qualifier.
+  return cleanAdvertLocation(car?.location).split(',')[0].trim();
+}
+function mapLocationForCar(car) {
+  return cleanAdvertLocation(car?.location) || postcodeOnlyLocation(car?.location);
 }
 function milesForGroup(group) {
-  const points=group.map(car => locationPoints.get(mapLocationKey(locationForCar(car))))
+  const points=group.map(car => locationPoints.get(mapLocationKey(mapLocationForCar(car))))
     .filter(item => item && Number.isFinite(item.lat) && Number.isFinite(item.lng));
   return points.length ? Math.min(...points.map(point => geoMiles(DISTANCE_ORIGIN,point))) : null;
 }
@@ -846,7 +874,7 @@ function groupMatchesDistance(group) {
 }
 async function ensureDistanceLocations(cars) {
   if (!wantsDistanceCoordinates() || distanceLookupBusy) return;
-  const locations=[...new Set(cars.map(locationForCar).filter(Boolean))]
+  const locations=[...new Set(cars.map(mapLocationForCar).filter(Boolean))]
     .filter(location => !locationPoints.has(mapLocationKey(location)) &&
       !distanceLookups.has(mapLocationKey(location)) &&
       !distanceFailures.has(mapLocationKey(location)));
@@ -912,12 +940,24 @@ function priceMileageObservation(group) {
     [...group].filter(car=>Number(car.price)>0)
       .sort((a,b)=>Number(a.price)-Number(b.price))[0];
   const price=Number(priced?.price)>0 ? Number(priced.price) : null;
-  const mileage=vehicleMileage(combined);
+  // A combined vehicle has mileage=null when provider readings disagree.
+  // Use the underlying advert whose asking price is being evaluated, then
+  // fall back to another credible source instead of losing the whole rating.
+  const sourceMileages=group.map(car=>({car,mileage:vehicleMileage(car)}))
+    .filter(row=>row.mileage!==null);
+  const manualMileage=sourceMileages.find(row=>row.car.manualFields?.includes('mileage'));
+  const pricedMileage=sourceMileages.find(row=>row.car.id===priced?.id);
+  const mileage=manualMileage?.mileage ?? pricedMileage?.mileage ??
+    (sourceMileages.length ? priceMileageMedian(sourceMileages.map(row=>row.mileage)) : null);
+  const mileageConflict=sourceMileages.length>1 &&
+    Math.max(...sourceMileages.map(row=>row.mileage))-
+    Math.min(...sourceMileages.map(row=>row.mileage))>
+    Math.min(1250,Math.max(500,Math.min(...sourceMileages.map(row=>row.mileage))*.018));
   const year=Number(combined?.year);
   const identity=vehicleIdentity(combined?.title);
   const family=identity ? identity.make+'/'+identity.model+'/'+priceMileageVariant(combined.title) : null;
   return {id:group[0]?.id,ids:group.map(car=>car.id),price,mileage,year,family,
-    transmission:effectiveTransmission(combined)};
+    mileageConflict,transmission:effectiveTransmission(combined)};
 }
 function priceMileageMedian(numbers) {
   const sorted=[...numbers].filter(Number.isFinite).sort((a,b)=>a-b);
@@ -1008,6 +1048,7 @@ function priceMileageRatings(groups) {
       'using '+currency(rate*10000)+' per 10,000 miles. '+
       (adjustment.estimated ? 'Approximate mileage allowance (3% of median asking price per 10,000 miles); few reliable same-year observations. ' :
         'Mileage rate estimated from same-year comparable adverts. ')+
+      (row.mileageConflict ? 'Merged adverts disagree on mileage; the preferred valid advert reading was used. ' : '')+
       'Asking prices only; not a verified market valuation.';
     const detail={tier,label:labels[tier],
       score:relativeDifference===null?null:-relativeDifference,
@@ -1138,36 +1179,32 @@ function renderResults() {
 }
 
 function mapLocationForGroup(group) {
-  const locations = [...new Set(group.map(locationForCar).filter(Boolean))];
+  const locations=[...new Set(group.map(mapLocationForCar).filter(Boolean))];
   if (!locations.length) return '';
-  // If one source has already produced a mapped point, use that over an
-  // ambiguous town from another website. Prefer actual postcodes otherwise.
-  const alreadyMapped = locations.find(loc => locationPoints.get(mapLocationKey(loc))?.lat);
-  if (alreadyMapped) return alreadyMapped;
-  const rank = loc => {
-    if (/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(loc)) return 100;
-    if (/\b[A-Z]{1,2}\d[A-Z\d]?\b/i.test(loc) && loc.length < 8) return 80;
-    if (/\(\d+\s*(?:miles?|mi)\)/i.test(loc)) return 30;
-    if (loc.includes(',')) return 20;
-    return 10;
-  };
-  return locations.sort((a,b) => rank(b)-rank(a))[0];
+  // A named locality is preferable to a raw postcode; a county qualifier
+  // helps the resolver distinguish similarly named towns.
+  const names=locations.filter(loc=>!!cleanAdvertLocation(loc));
+  const choices=names.length ? names : locations;
+  const mapped=choices.find(loc=>locationPoints.get(mapLocationKey(loc))?.lat);
+  if(mapped) return mapped;
+  return [...choices].sort((a,b)=>Number(b.includes(','))-Number(a.includes(',')))[0];
 }
 function mapLocationKey(location) {
-  return cleanAdvertLocation(location).toLowerCase();
+  const place=cleanAdvertLocation(location);
+  return (place || postcodeOnlyLocation(location)).toLowerCase();
 }
 async function showCarLocation(ids) {
   const rows=ids.map(id=>state.listings[id]).filter(Boolean);
   const location=mapLocationForGroup(rows);
   if (!location) { toast('This listing has no advertised location to map.',true); return; }
   const serial=++locationModalRequest;
-  $('locationModalTitle').textContent=location;
+  $('locationModalTitle').textContent=locationForCar({location}) || 'Advertised area';
   $('locationMapDescription').textContent='Finding the approximate advertised area…';
   const dialog=$('locationDialog');
   if (!dialog.open) show('locationDialog');
   const wrap=$('locationMiniMap');
   if (!window.L) {
-    $('locationMapDescription').textContent='The map library could not load. The advertised location is '+location+'.';
+    $('locationMapDescription').textContent='The map library could not load. The advertised area could not be displayed.';
     return;
   }
   if (!locationModalMap) {
@@ -1310,8 +1347,7 @@ async function showListingsMap(groups) {
   const ticket = ++mapRequestId;
   // Check locations from every source advert in a grouped car. If one
   // website only says "Ripley", another may have a precise postcode.
-  const places = [...new Set(groups.flatMap(group => group.map(car =>
-    typeof car.location === 'string' ? car.location.trim() : '')).filter(Boolean))];
+  const places = [...new Set(groups.flatMap(group => group.map(mapLocationForCar).filter(Boolean)))];
   const missing = places.filter(location => !locationPoints.has(mapLocationKey(location)));
   redrawListingMap(groups, missing.length);
   let failed = false;
@@ -1382,11 +1418,12 @@ function renderCard(g, statuses, inHiddenSection=false, valueRating=null) {
   const inTitle = value => !!value && titleText.toLowerCase().replace(/[^a-z0-9]/g,'').includes(String(value).toLowerCase().replace(/[^a-z0-9]/g,''));
   const mileage = car.combinedMeta.fields.mileage.display;
   const transmission = effectiveTransmission(car);
-  const locationLabel = locationForCar(car);
+  const locationLabel = locationForCar(car) || g.map(locationForCar).find(Boolean) || '';
+  const hasMapLocation=!!mapLocationForGroup(g);
   const cardSpecs = [
     car.year && !inTitle(car.year) ? `<span>${car.year}</span>` : '',
     mileage && !inTitle(mileage) ? `<span>${esc(mileage)}</span>` : '',
-    locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel)}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
+    hasMapLocation ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel || 'View advertised area')}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
     exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}</span>` : '',
     !exteriorColour(car) && getSearch()?.filters?.colours?.length &&
       getSearch()?.filters?.includeUnknownColours ?
