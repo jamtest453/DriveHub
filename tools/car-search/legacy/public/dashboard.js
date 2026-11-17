@@ -546,7 +546,8 @@ function renderSearchesPage() {
     const details = search.lastChecked ? `${older(search.lastChecked)} · ${lastRun}` : 'Not checked yet';
     const updatesSummary = stats.updates ?
       `<small>${stats.added} new · ${stats.priceChanges} price changes</small>` : '<small>No updates since last scan</small>';
-    return `<article class="saved-search-row">
+    const refreshing=scanBusy && scanSearchIds.includes(search.id);
+    return `<article class="saved-search-row ${refreshing?'is-refreshing':''}">
       <div class="saved-search-main">
         <h2>${esc(search.name)}</h2>
         <div class="saved-search-sites">${[...new Set((search.links || []).map(link => link.site))].map(site => displaySite(site, 'mini')).join('')}</div>
@@ -557,11 +558,28 @@ function renderSearchesPage() {
         <div><dt>Updates</dt><dd>${stats.updates}${updatesSummary}</dd></div>
       </dl>
       <div class="saved-search-actions">
-        <button class="button quiet" type="button" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>↻ Refresh now</button>
+        <span class="saved-search-progress" data-refresh-status="${esc(search.id)}" role="status" aria-live="polite">${refreshing?'Refreshing…':''}</span>
+        <button class="button quiet" type="button" data-action="refresh" data-id="${esc(search.id)}" ${scanBusy?'disabled':''}>${refreshing?'↻ Refreshing…':'↻ Refresh now'}</button>
         <button class="button dark" type="button" data-action="view" data-view="search:${esc(search.id)}">Open results →</button>
       </div>
     </article>`;
   }).join('')}</div>`;
+}
+function syncSearchRefreshControls() {
+  // Status polling must not rebuild every card and shared header.
+  for (const button of $('searchesPage').querySelectorAll('button[data-action="refresh"]')) {
+    const active = scanBusy && scanSearchIds.includes(button.dataset.id);
+    const text = active ? '↻ Refreshing…' : '↻ Refresh now';
+    if (button.textContent !== text) button.textContent=text;
+    button.disabled=scanBusy;
+    button.closest('.saved-search-row')?.classList.toggle('is-refreshing',active);
+    const indicator=$('searchesPage').querySelectorAll('[data-refresh-status]');
+    for (const item of indicator) {
+      if (item.dataset.refreshStatus !== button.dataset.id) continue;
+      const status=active ? 'Refreshing' + (scanSubtext ? ' · '+scanSubtext : '…') : '';
+      if (item.textContent !== status) item.textContent=status;
+    }
+  }
 }
 function renderNav() {
   const nav = $('searchNav');
@@ -1733,6 +1751,7 @@ async function refresh(searchId = null) {
   try {
     const payload = await api('/api/refresh',{method:'POST',body:JSON.stringify({searchId})});
     scanBusy=true; abortScan=false; scanText=payload.job.label; scanSubtext='';
+    scanSearchIds=payload.job.searchIds || (searchId ? [searchId] : state.searches.map(s=>s.id));
     seenRunning=true;
     setNotice(''); render();
   } catch (error) { toast('Could not start refresh: ' + error.message,true); }
@@ -1747,8 +1766,13 @@ async function syncStatus() {
     scanText=payload.job?.label || '';
     scanSubtext=payload.job?.detail || '';
     abortScan=!!payload.job?.stop;
+    scanSearchIds=scanBusy ? (payload.job?.searchIds || []) : [];
     if (payload.revision !== revision) await load();
-    else if (scanBusy || wasBusy !== scanBusy) render();
+    else if (wasBusy !== scanBusy) render();
+    else {
+      renderProgress();
+      syncSearchRefreshControls();
+    }
     if (wasBusy && !scanBusy) {
       setNotice(payload.job?.message || 'Refresh finished.');
       toast(payload.job?.message || 'Refresh complete.', /failed|warnings|stopped/i.test(payload.job?.message||''));
