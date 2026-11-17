@@ -8,6 +8,7 @@ import re
 from urllib.parse import parse_qsl, urlsplit
 
 from .query_builder import COLOURS, validate_filters
+from .body_type import normalise_body_type
 from .scanner import clean_url, site_for
 
 # Parameter naming differs per provider, including casing and punctuation.
@@ -34,6 +35,7 @@ MODEL_KEYS = {"model"}
 TRIM_KEYS = {"aggregatedtrim", "trim", "variant", "derivative"}
 TRANSMISSION_KEYS = {"transmission", "gearbox", "transmissiontype"}
 COLOUR_KEYS = {"colour", "colours", "color", "colors", "exteriorcolour", "exteriorcolor"}
+BODY_TYPE_KEYS = {"bodytype", "bodytypes", "bodystyle", "bodystyles"}
 LOCATION_KEYS = {"postcode", "radius", "location", "advertisinglocation", "distance",
                  "latitude", "longitude", "lat", "lng", "long", "city", "region"}
 NON_CRITERIA_KEYS = {
@@ -209,6 +211,21 @@ def parse_search_url(raw):
     if colours:
         raw_filters["colours"] = colours
         applied.append("exterior colour")
+
+    bodies = []
+    for key in BODY_TYPE_KEYS & values.keys():
+        consumed.add(key)
+        for body_value in values[key]:
+            for part in re.split(r"[,;|]+", body_value):
+                body = normalise_body_type(part.strip())
+                if body:
+                    if body not in bodies:
+                        bodies.append(body)
+                else:
+                    warnings.append("Unrecognised body style; review it manually.")
+    if bodies:
+        raw_filters["bodyTypes"] = bodies
+        applied.append("body type")
 
     for key in TRANSMISSION_KEYS & values.keys():
         consumed.add(key)
