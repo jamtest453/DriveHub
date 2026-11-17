@@ -1205,7 +1205,11 @@ function renderResults() {
   $('listingMapPanel').classList.toggle('hidden', resultsLayout !== 'map');
   renderHiddenResults(search,statuses);
   if (resultsLayout === 'map') {
-    showListingsMap(groups);
+    void showListingsMap(groups).catch(error=>{
+      console.warn('Could not render the car results map:',error);
+      $('mapCount').textContent='Map unavailable';
+      $('mapSubtitle').textContent='The map could not be displayed. Try switching to List and back to Map.';
+    });
     return;
   }
   if (!state.searches.length && view !== 'saved') {
@@ -1241,6 +1245,27 @@ function mapLocationKey(location) {
   const place=cleanAdvertLocation(location);
   return (place || postcodeOnlyLocation(location)).toLowerCase();
 }
+let leafletFallbackPromise=null;
+async function ensureMapLibrary() {
+  if (window.L?.map && window.L?.tileLayer) return true;
+  // CDN CSS/JS can be unavailable on some devices. Keep the normal
+  // jsDelivr preload, but recover using a different established host.
+  if (!leafletFallbackPromise) {
+    leafletFallbackPromise=new Promise(resolve=>{
+      const css=document.createElement('link');
+      css.rel='stylesheet';
+      css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+      const script=document.createElement('script');
+      script.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.async=true;
+      script.onload=()=>resolve(!!window.L?.map);
+      script.onerror=()=>resolve(false);
+      document.head.appendChild(script);
+    });
+  }
+  return leafletFallbackPromise;
+}
 async function showCarLocation(ids) {
   const rows=ids.map(id=>state.listings[id]).filter(Boolean);
   const location=mapLocationForGroup(rows);
@@ -1251,10 +1276,12 @@ async function showCarLocation(ids) {
   const dialog=$('locationDialog');
   if (!dialog.open) show('locationDialog');
   const wrap=$('locationMiniMap');
-  if (!window.L) {
-    $('locationMapDescription').textContent='The map library could not load. The advertised area could not be displayed.';
+  if (!await ensureMapLibrary()) {
+    $('locationMapDescription').textContent='The map could not load. Check your connection and try opening the location again.';
+    leafletFallbackPromise=null; // Allow a later manual retry.
     return;
   }
+  if (serial!==locationModalRequest || !dialog.open) return;
   if (!locationModalMap) {
     locationModalMap=L.map(wrap,{scrollWheelZoom:false,zoomControl:true,minZoom:4,maxZoom:14});
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
@@ -1391,12 +1418,26 @@ function redrawListingMap(groups, pending=0, failed=false) {
 }
 async function showListingsMap(groups) {
   mapShown = true;
+  const ticket=++mapRequestId;
+  $('mapCount').textContent='Preparing map…';
+  if (!await ensureMapLibrary()) {
+    $('mapCount').textContent='Map library unavailable';
+    $('mapSubtitle').textContent='The map library did not load. Try switching to List and back to Map.';
+    leafletFallbackPromise=null;
+    return;
+  }
+  if (ticket!==mapRequestId || resultsLayout!=='map') return;
   if (!initListingMap()) return;
   requestAnimationFrame(() => listingMap.invalidateSize());
   const signature = JSON.stringify(groups.map(g => g.map(car => [car.id,car.location,car.price])));
-  if (signature === mapSignature) return;
+  if (signature === mapSignature) {
+    // Repaint even if the data signature is unchanged: geocoding may have
+    // completed after a previous render or the map was hidden/resized.
+    redrawListingMap(groups,0);
+    requestAnimationFrame(()=>listingMap.invalidateSize());
+    return;
+  }
   mapSignature = signature;
-  const ticket = ++mapRequestId;
   // Check locations from every source advert in a grouped car. If one
   // website only says "Ripley", another may have a precise postcode.
   const places = [...new Set(groups.flatMap(group => group.map(mapLocationForCar).filter(Boolean)))];
