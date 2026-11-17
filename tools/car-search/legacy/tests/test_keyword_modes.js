@@ -19,6 +19,7 @@ const context = {
   availableIds: () => ['a', 'b'],
   grouped: rows => [rows],
   searchColourMatchesGroup: () => true,
+  searchBodyTypeMatchesGroup: () => true,
 };
 const helpers = vm.runInNewContext(source.slice(start, end) +
   '\n({keywordTerms, textHasPhrase, searchRequiredGroup, searchPreferredScore, searchExcludedGroup, matchingSearchIds, preferredKeywords})', context);
