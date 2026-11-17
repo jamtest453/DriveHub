@@ -71,7 +71,18 @@ const locationPoints = new Map();
 const locationIssues = new Map();
 let lastMapGroups = [];
 let activeModalLocationIds = [];
-const DISTANCE_ORIGIN = {lat:53.36397,lng:-2.06781,label:'High Lane, Stockport'};
+const DEFAULT_DISTANCE_ORIGIN = {lat:53.36397,lng:-2.06781,label:'High Lane, Stockport'};
+let DISTANCE_ORIGIN = DEFAULT_DISTANCE_ORIGIN;
+function homeShortName() { return String(DISTANCE_ORIGIN.label || 'home').split(',')[0].trim(); }
+function applyHomeLocation() {
+  const home=state?.options?.home;
+  DISTANCE_ORIGIN = home && Number.isFinite(home.lat) && Number.isFinite(home.lng) ? home : DEFAULT_DISTANCE_ORIGIN;
+  document.querySelectorAll('.home-label').forEach(el => { el.textContent = homeShortName(); });
+  const near=document.querySelector('#sortFilter option[value="distanceNear"]');
+  const far=document.querySelector('#sortFilter option[value="distanceFar"]');
+  if (near) near.textContent='Distance: nearest to '+homeShortName();
+  if (far) far.textContent='Distance: furthest from '+homeShortName();
+}
 const distanceLookups = new Set();
 const distanceFailures = new Set();
 let distanceLookupBusy = false;
@@ -101,7 +112,7 @@ function imageUrl(input) {
 }
 let revision=-1, statusPolling=false, seenRunning=false;
 function accept(payload) {
-  if (payload && payload.state) { state = payload.state; revision = payload.revision; }
+  if (payload && payload.state) { state = payload.state; revision = payload.revision; applyHomeLocation(); }
   if (payload && payload.job) {
     scanBusy=!!payload.job.busy;
     abortScan=!!payload.job.stop;
@@ -831,6 +842,17 @@ function matchesResultFilters(car) {
   const mileageMin=number('resultMileageMin'), mileageMax=number('resultMileageMax');
   const engineMin=number('resultEngineMin'), engineMax=number('resultEngineMax');
   const bhpMin=number('resultBhpMin'), bhpMax=number('resultBhpMax');
+  // Like the saved-search criteria, a missing value is "not stated", not a
+  // failure, unless the user asks to hide cars missing that detail.
+  if (!hideUnknownDetails()) {
+    const ok=(value,min,max)=>value==null || value==='' ||
+      ((min===null || Number(value)>=min) && (max===null || Number(value)<=max));
+    if (!ok(car.price,priceMin,priceMax) || !ok(car.year,yearMin,yearMax) ||
+        !ok(car.mileage,mileageMin,mileageMax) || !ok(car.engine,engineMin,engineMax) ||
+        !ok(car.bhp,bhpMin,bhpMax)) return false;
+    const gearbox=$('resultTransmission').value, known=effectiveTransmission(car);
+    return gearbox==='any' || !known || known===gearbox;
+  }
   if (priceMin !== null && !(car.price != null && Number(car.price)>=priceMin)) return false;
   if (priceMax !== null && !(car.price != null && Number(car.price)<=priceMax)) return false;
   if (yearMin !== null && !(car.year != null && Number(car.year)>=yearMin)) return false;
@@ -859,6 +881,7 @@ function groupMatchesColour(group) {
   if (selected === 'unknown') return colours.length === 0;
   return colours.includes(selected);
 }
+function hideUnknownDetails() { return !!$('resultHideUnknown')?.checked; }
 function groupMatchesBodyType(group) {
   const selected=$('resultBodyType').value;
   if (selected==='any') return true;
@@ -949,7 +972,8 @@ function groupMatchesDistance(group) {
   const selected=$('resultDistanceMax').value;
   if (!selected) return true;
   const distance=milesForGroup(group);
-  return distance !== null && distance <= Number(selected);
+  if (distance === null) return !hideUnknownDetails();
+  return distance <= Number(selected);
 }
 async function ensureDistanceLocations(cars) {
   if (!wantsDistanceCoordinates() || distanceLookupBusy) return;
@@ -1178,6 +1202,27 @@ function groupUpdatedAt(group) {
   return Math.max(0,...group.map(listingUpdatedAt));
 }
 
+function hiddenReasons(allGroups) {
+  // Explain the hiding the user is least likely to expect: cars dropped only
+  // because a detail is missing rather than because it is wrong.
+  if (!hideUnknownDetails()) return '';
+  const number=id=>$(id).value.trim()!=='';
+  const checks=[['price',['resultPriceMin','resultPriceMax']],['year',['resultYearMin','resultYearMax']],
+    ['mileage',['resultMileageMin','resultMileageMax']],['engine size',['resultEngineMin','resultEngineMax'],'engine'],
+    ['BHP',['resultBhpMin','resultBhpMax'],'bhp']];
+  const parts=[];
+  for (const [label,ids,field] of checks) {
+    if (!ids.some(number)) continue;
+    const key=field||label;
+    const n=allGroups.filter(g=>g.every(c=>c[key]==null || c[key]==='')).length;
+    if (n) parts.push(`${n} missing ${label}`);
+  }
+  if ($('resultDistanceMax').value) {
+    const n=allGroups.filter(g=>milesForGroup(g)===null).length;
+    if (n) parts.push(`${n} location unknown`);
+  }
+  return parts.length ? ' – including '+parts.join(', ') : '';
+}
 function renderResults() {
   if (view === 'searches') return;
   const search = getSearch();
@@ -1187,9 +1232,10 @@ function renderResults() {
   const keyword = $('keywordFilter').value.toLowerCase().trim();
   const site = $('sourceFilter').value;
   const changesOnly = $('changesOnly').checked && view !== 'saved';
-  let groups = baseGroupsForView(lists).filter(g =>
+  const allGroups = baseGroupsForView(lists);
+  let groups = allGroups.filter(g =>
     (site === 'all' || g.some(l => l.site === site)) &&
-    (!keyword || g.some(l => (l.title+' '+(l.location || '')+' '+(l.notes || '')).toLowerCase().includes(keyword))) &&
+    (!keyword || g.some(l => (l.title+' '+(l.location || '')+' '+(l.notes || '')+' '+(l.description || '')).toLowerCase().includes(keyword))) &&
     (!changesOnly || g.some(l => statuses.newIds.has(l.id) || statuses.changedIds.has(l.id))) &&
     // A multi-source car needs only one advert meeting the display criteria.
     // These filters do not change the source queries or stored snapshots.
@@ -1219,8 +1265,12 @@ function renderResults() {
         aMiles-bMiles : bMiles-aMiles;
     }
     const mina = Math.min(...a.map(x => x.price || Infinity)), minb = Math.min(...b.map(x => x.price || Infinity));
-    if (sort === 'priceLow') return mina - minb;
-    if (sort === 'priceHigh') return minb - mina;
+    if (sort === 'priceLow' || sort === 'priceHigh') {
+      // Cars with no asking price go last in both directions.
+      if (mina === Infinity || minb === Infinity) {
+        if (mina !== minb) return mina === Infinity ? 1 : -1;
+      } else if (mina !== minb) return sort === 'priceLow' ? mina - minb : minb - mina;
+    }
     if (sort === 'year') return Math.max(...b.map(x=>x.year || 0)) - Math.max(...a.map(x=>x.year || 0));
     const af = Number(a.some(l => statuses.newIds.has(l.id) || statuses.changedIds.has(l.id)));
     const bf = Number(b.some(l => statuses.newIds.has(l.id) || statuses.changedIds.has(l.id)));
@@ -1228,13 +1278,16 @@ function renderResults() {
     return Math.max(...b.map(l => Date.parse(l.firstSeen || 0))) - Math.max(...a.map(l => Date.parse(l.firstSeen || 0)));
   });
   $('resultsTitle').textContent = view === 'saved' ? 'Your saved listings' : search ? 'Combined results' : 'Listings across searches';
-  $('resultsSubtitle').textContent = `${groups.length} ${groups.length === 1 ? 'car' : 'cars'} shown · ${lists.length} source listings · same-car matches grouped` +
+  const hiddenCount = allGroups.length - groups.length;
+  $('resultsSubtitle').textContent = `${groups.length} ${groups.length === 1 ? 'car' : 'cars'} shown` +
+    (hiddenCount > 0 ? ` of ${allGroups.length} (${hiddenCount} hidden by filters${hiddenReasons(allGroups)})` : '') +
+    ` · ${lists.length} source listings · same-car matches grouped` +
     (sort === 'preferred' && search && keywordTerms(preferredKeywords(search)).length ?
       ' · preferred keyword matches first' : '') +
     (sort === 'priceMileage' ? ' · asking prices adjusted for mileage using comparable adverts' : '') +
     (sort === 'recentlyUpdated' ? ' · newest adverts and price changes first' : '') +
     (wantsDistanceCoordinates() ? (distanceLookupBusy ? ' · locating adverts…' :
-      ' · straight-line distance from High Lane (unknown locations last)') : '');
+      ` · straight-line distance from ${homeShortName()} (unknown locations last)`) : '');
   $('listModeButton').classList.toggle('active', resultsLayout === 'list');
   $('mapModeButton').classList.toggle('active', resultsLayout === 'map');
   $('listModeButton').setAttribute('aria-pressed', String(resultsLayout === 'list'));
@@ -1644,7 +1697,7 @@ function renderCard(g, statuses, inHiddenSection=false, valueRating=null) {
   const cardSpecs = [
     car.year && !inTitle(car.year) ? `<span>${car.year}</span>` : '',
     mileage && !inTitle(mileage) ? `<span>${esc(mileage)}</span>` : '',
-    hasMapLocation ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from High Lane"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel || 'View advertised area')}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
+    hasMapLocation ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map; distances are straight-line from ${esc(homeShortName())}"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg><span>${esc(locationLabel || 'View advertised area')}${distance !== null ? ` <span class="car-location-distance">(${Math.round(distance)} miles)</span>` : ''}</span></button>` : '',
     exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}</span>` : '',
     !exteriorColour(car) && getSearch()?.filters?.colours?.length &&
       getSearch()?.filters?.includeUnknownColours ?
@@ -2214,7 +2267,24 @@ async function deleteSearch() {
     deleteId=null; view='overview'; hide('deleteDialog'); render(); toast('Search deleted. Saved cars are retained.');
   } catch (error) { toast(error.message,true); }
 }
-function openSettings() { $('pageDepth').value = String(state.options.pageDepth || 3); show('settingsDialog'); }
+function openSettings() {
+  $('pageDepth').value = String(state.options.pageDepth || 3);
+  $('homeLocationInput').value = state.options.home?.label || '';
+  show('settingsDialog');
+}
+async function saveHomeLocation() {
+  const place=$('homeLocationInput').value.replace(/\s+/g,' ').trim().slice(0,80);
+  if (!place) { toast('Enter a town or postcode.',true); return; }
+  try {
+    const answer=await api('/api/map/locations',{method:'POST',body:JSON.stringify({locations:[place],retry:true})});
+    const point=answer.locations?.[0]?.point;
+    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
+      toast('Could not find that place. Try a full postcode.',true); return;
+    }
+    accept(await api('/api/options',{method:'PATCH',body:JSON.stringify({home:{label:place,lat:point.lat,lng:point.lng}})}));
+    render(); toast(`Distances now measured from ${homeShortName()}.`);
+  } catch (error) { toast(error.message,true); }
+}
 function downloadBackup() { window.location.href = '/api/export'; }
 async function importBackup(file) {
   if (!file) return;
@@ -2436,9 +2506,19 @@ RESULT_FILTERS.forEach(id => $(id).addEventListener(
     if (id === 'resultDistanceMax') distanceFailures.clear();
     renderResults();
   }));
+$('resultHideUnknown').addEventListener('change', renderResults);
+$('saveHomeLocation').addEventListener('click', saveHomeLocation);
+$('homeLocationInput').addEventListener('keydown', event => { if (event.key==='Enter') { event.preventDefault(); saveHomeLocation(); } });
+$('resetHomeLocation').addEventListener('click', async () => {
+  try {
+    accept(await api('/api/options',{method:'PATCH',body:JSON.stringify({home:null})}));
+    $('homeLocationInput').value=''; render(); toast('Distances now measured from High Lane, Stockport.');
+  } catch (error) { toast(error.message,true); }
+});
 $('resetResultFilters').addEventListener('click', () => {
   RESULT_FILTERS.forEach(id => $(id).value =
     id === 'resultTransmission' || id === 'resultColour' || id==='resultBodyType' ? 'any' : '');
+  $('resultHideUnknown').checked = false;
   renderResults();
   toast('Displayed-result filters cleared. Search criteria are unchanged.');
 });

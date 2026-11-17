@@ -136,8 +136,13 @@ locationPoints.set('near town',{lat:53.40,lng:-2.08});
 locationPoints.set('far town',{lat:51.50,lng:-0.12});
 check('near High Lane',groupMatchesDistance([{location:'Near Town'}]),true);
 check('far from High Lane',groupMatchesDistance([{location:'Far Town'}]),false);
-check('unknown location excluded with distance constraint',
+check('unknown location kept by default with distance constraint',
+      groupMatchesDistance([{location:'Unknown'}]),true);
+fields.resultHideUnknown.checked=true;
+check('unknown location excluded when hiding unstated details',
       groupMatchesDistance([{location:'Unknown'}]),false);
+check('far car still excluded when hiding unstated details',
+      groupMatchesDistance([{location:'Far Town'}]),false);
 check('use location from another provider in grouped car',
       groupMatchesDistance([{location:'Unknown'},{location:'Near Town'}]),true);
 fields.resultDistanceMax.value='';
@@ -159,7 +164,7 @@ function section(start,end) {
 const colours=section('const COLOUR_CHOICES =','let scanBusy');
 const colour=section('function exteriorColour(', 'function matchesResultFilters(');
 const groups=section('function groupMatchesColour(', 'function renderResults(');
-const fields={resultColour:{value:'any'},resultDistanceMax:{value:''}};
+const fields={resultColour:{value:'any'},resultDistanceMax:{value:''},resultHideUnknown:{checked:false}};
 const ctx={console,Math,Number,locationPoints:new Map(),
   DISTANCE_ORIGIN:{lat:53.36397,lng:-2.06781},
   mapLocationKey:loc=>String(loc).trim().toLowerCase(),

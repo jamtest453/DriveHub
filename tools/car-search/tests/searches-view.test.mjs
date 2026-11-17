@@ -152,7 +152,7 @@ const car={
 const cardCtx={
   Set,Intl,Math,SITE_NAMES:{autotrader:'Auto Trader'},
   combinedCarDetails:()=>car,matchingColourAdvert:()=>car,
-  matchesResultFilters:()=>true,milesForGroup:()=>157.3,
+  matchesResultFilters:()=>true,milesForGroup:()=>157.3,homeShortName:()=>'High Lane',
   effectiveTransmission:()=>'',exteriorColour:()=>'',bodyTypeForCar:()=>'',bestPhotoMatch:()=>null,
   imageUrl:()=>'',linkUrl:()=>'',getSearch:()=>null,
   hasSeparatedMatches:()=>false,when:()=> '17 Nov',
