@@ -19,8 +19,37 @@ let detailIds = [], activeCarId = null;
 const FILTER_FIELDS = ['priceMin','priceMax','mileageMin','mileageMax','yearMin','yearMax','engineMin','engineMax','bhpMin','bhpMax'];
 const RESULT_FILTERS = ['resultPriceMin','resultPriceMax','resultYearMin','resultYearMax',
   'resultMileageMin','resultMileageMax','resultEngineMin','resultEngineMax',
-  'resultBhpMin','resultBhpMax','resultColour','resultTransmission','resultDistanceMax'];
+  'resultBhpMin','resultBhpMax','resultColour','resultBodyType','resultTransmission','resultDistanceMax'];
 const COLOUR_CHOICES = ['Black','White','Silver','Grey','Blue','Red','Green','Yellow','Orange','Purple','Brown','Gold','Beige','Other'];
+const BODY_TYPE_CHOICES = [
+  ['coupe','Coupe'],['convertible','Convertible / Roadster'],
+  ['saloon','Saloon'],['hatchback','Hatchback'],['estate','Estate'],
+  ['suv','SUV / 4x4'],['mpv','MPV'],['pickup','Pick-up'],
+  ['van','Van'],['other','Other']
+];
+function bodyTypeForCar(car) {
+  const allowed=BODY_TYPE_CHOICES.map(row=>row[0]);
+  const explicit=String(car?.bodyType || '').toLowerCase().trim();
+  if (allowed.includes(explicit)) return explicit;
+  // Legacy adverts may not have been scanned since body-type extraction
+  // was introduced. Only trust recognisable wording in the TITLE.
+  const title=String(car?.title || '').toLowerCase();
+  const types=[
+    ['convertible',/\b(?:convertible|cabriolet|cabrio|roadster|drophead|soft[ -]?top|spyder|spider)\b/],
+    ['coupe',/\b(?:coup[eé]|coupe)\b/],
+    ['estate',/\b(?:estate|station wagon|touring|sportbrake|shooting brake)\b/],
+    ['saloon',/\b(?:saloon|sedan)\b/],
+    ['hatchback',/\b(?:hatchback|hatch)\b/],
+    ['suv',/\b(?:suv|4x4|crossover)\b/],
+    ['mpv',/\b(?:mpv|people carrier|minivan)\b/],
+    ['pickup',/\b(?:pick[ -]?up)\b/],
+    ['van',/\b(?:panel van|van)\b/]
+  ].filter(([_,pattern])=>pattern.test(title));
+  return types.length===1 ? types[0][0] : '';
+}
+function bodyTypeLabel(type) {
+  return BODY_TYPE_CHOICES.find(row=>row[0]===type)?.[1] || '';
+}
 let scanBusy = false, abortScan = false, scanText = '', scanSubtext = '';
 let scanSearchIds = [];
 let facebookStatusLoaded = false;
@@ -122,6 +151,14 @@ function searchColourMatchesGroup(group, search) {
   // consistent known colours to avoid allowing a blue search to show red cars.
   return known.every(colour => selected.includes(colour));
 }
+function searchBodyTypeMatchesGroup(group, search) {
+  const selected=search?.filters?.bodyTypes || [];
+  if (!selected.length) return true;
+  const known=group.map(bodyTypeForCar).filter(Boolean);
+  // Unlike exterior paint strict mode, missing body style always passes.
+  // A confirmed conflicting body type in a merged advert must not pass.
+  return !known.length || known.every(type=>selected.includes(type));
+}
 function normaliseExcludedText(value) {
   // Shared word/phrase matching: case-insensitive, punctuation as whitespace.
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -171,12 +208,13 @@ function searchPreferredScore(group, search) {
 }
 function matchingSearchIds(search) {
   const ids = availableIds(search);
-  if (!search?.filters?.colours?.length &&
+  if (!search?.filters?.colours?.length && !search?.filters?.bodyTypes?.length &&
       !search?.filters?.excludeKeywords && !search?.filters?.requiredKeywords) return ids;
   // Match per grouped vehicle, not per advert; preserve other searches,
   // saved adverts, notes and original provider evidence.
   return grouped(ids.map(id => state.listings[id]).filter(Boolean))
     .filter(group => searchColourMatchesGroup(group, search) &&
+      searchBodyTypeMatchesGroup(group, search) &&
       searchRequiredGroup(group, search) && !searchExcludedGroup(group, search))
     .flatMap(group => group.map(car => car.id));
 }
@@ -663,7 +701,7 @@ function combinedCarDetails(group, preferred=null) {
   if (!focus) return null;
   const combined={...focus}, fields={};
   const labels={
-    year:'Year', mileage:'Mileage', colour:'Exterior colour',
+    year:'Year', mileage:'Mileage', colour:'Exterior colour',bodyType:'Body type',
     engine:'Engine', bhp:'Power', transmission:'Transmission',
     location:'Location', registration:'Registration'
   };
@@ -675,6 +713,7 @@ function combinedCarDetails(group, preferred=null) {
     year:car=>{const n=Number(car.year);return Number.isInteger(n)&&n>=1950&&n<=2035?n:null},
     mileage:car=>vehicleMileage(car),
     colour:car=>exteriorColour(car)||null,
+    bodyType:car=>bodyTypeForCar(car)||null,
     engine:car=>{const n=Number(car.engine);return car.engine!=null && n>=0.5 && n<=15?n:null},
     bhp:car=>{const n=Number(car.bhp);return car.bhp!=null && n>=30 && n<=2000?n:null},
     transmission:car=>effectiveTransmission(car)||null,
@@ -741,6 +780,7 @@ function combinedCarDetails(group, preferred=null) {
     else if (key==='bhp' && value!==null) display=value+' bhp';
     else if (key==='transmission' && value) display=value==='automatic'?'Automatic':'Manual';
     else if (key==='colour' && value) display=value[0].toUpperCase()+value.slice(1);
+    else if (key==='bodyType' && value) display=bodyTypeLabel(value);
     if (conflict && key!=='location' && key!=='mileage' && !owned) display='Differs by advert';
     fields[key]={label:labels[key],value,display,observations,conflict,numberRange,
       manuallyEdited:!!owned};
@@ -815,6 +855,13 @@ function groupMatchesColour(group) {
   // of three duplicate adverts omitted the paint specification.
   if (selected === 'unknown') return colours.length === 0;
   return colours.includes(selected);
+}
+function groupMatchesBodyType(group) {
+  const selected=$('resultBodyType').value;
+  if (selected==='any') return true;
+  const known=group.map(bodyTypeForCar).filter(Boolean);
+  // A body-type result filter excludes *known* mismatches only.
+  return !known.length || known.every(type=>type===selected);
 }
 function geoMiles(a,b) {
   const rad=Math.PI/180,lat1=a.lat*rad,lat2=b.lat*rad;
@@ -1109,7 +1156,7 @@ function renderResults() {
     // A multi-source car needs only one advert meeting the display criteria.
     // These filters do not change the source queries or stored snapshots.
     (g.some(matchesResultFilters) || matchesResultFilters(combinedCarDetails(g))) &&
-    groupMatchesColour(g) && groupMatchesDistance(g));
+    groupMatchesColour(g) && groupMatchesBodyType(g) && groupMatchesDistance(g));
   const sort = $('sortFilter').value;
   const valueRatings=priceMileageRatings(priceMileageComparisonGroups(lists));
   groups.sort((a,b) => {
@@ -1434,6 +1481,8 @@ function renderCard(g, statuses, inHiddenSection=false, valueRating=null) {
     !exteriorColour(car) && getSearch()?.filters?.colours?.length &&
       getSearch()?.filters?.includeUnknownColours ?
       '<span title="This advert has no reliable exterior paint colour; your search includes unconfirmed colours.">Colour unconfirmed</span>' : '',
+    bodyTypeForCar(car) && !inTitle(bodyTypeLabel(bodyTypeForCar(car))) ?
+      `<span>${esc(bodyTypeLabel(bodyTypeForCar(car)))}</span>` : '',
     car.bhp && !inTitle(`${car.bhp} bhp`) ? `<span>${esc(car.bhp)} bhp</span>` : '',
     transmission && !inTitle(transmission) && !inTitle('DCT') && !inTitle('DSG') && !inTitle('PDK') ? `<span>${transmission==='automatic'?'Automatic':'Manual'}</span>` : ''
   ].filter(Boolean).join('');
@@ -1701,6 +1750,10 @@ function switchView(next) {
   $('changesOnly').checked = false;
   render();
 }
+function setupBodyTypeChoices(selected=[]) {
+  $('bodyTypeChoices').innerHTML=BODY_TYPE_CHOICES.map(([type,label])=>
+    `<label class="body-type-choice"><input type="checkbox" name="carBodyType" value="${type}" ${selected.includes(type)?'checked':''}><span>${esc(label)}</span></label>`).join('');
+}
 function setupColourChoices(selected=[]) {
   $('colourChoices').innerHTML = COLOUR_CHOICES.map(name => `<label class="colour-choice"><input type="checkbox" name="carColour" value="${name.toLowerCase()}" ${selected.includes(name.toLowerCase())?'checked':''}><span class="swatch swatch-${name.toLowerCase()}"></span><span>${name}</span></label>`).join('');
 }
@@ -1732,6 +1785,7 @@ async function importSearchCriteriaFromUrl() {
     }
     $('carTransmission').value = filters.transmission || 'any';
     setupColourChoices(filters.colours || []);
+    setupBodyTypeChoices(filters.bodyTypes || []);
     $('carStrictColour').checked = filters.includeUnknownColours !== false;
     const summary = (imported.applied || []).length ?
       'Imported ' + imported.applied.join(', ') + '.' :
@@ -1773,6 +1827,7 @@ function searchDialog(id = null) {
   }
   $('carTransmission').value = found?.filters?.transmission || 'any';
   setupColourChoices(found?.filters?.colours || []);
+  setupBodyTypeChoices(found?.filters?.bodyTypes || []);
   $('carStrictColour').checked = found?.filters?.includeUnknownColours ?? true;
   const chosen = found?.sources || ['autotrader','ebay','pistonheads','facebook'];
   document.querySelectorAll('[name=carSite]').forEach(input => input.checked = chosen.includes(input.value));
@@ -1790,7 +1845,8 @@ async function commitSearch() {
     excludeKeywords, transmission:$('carTransmission').value,
     includeUnknownColours:$('carStrictColour').checked,
     strictColour:!$('carStrictColour').checked,
-    colours:[...document.querySelectorAll('[name=carColour]:checked')].map(x => x.value) };
+    colours:[...document.querySelectorAll('[name=carColour]:checked')].map(x => x.value),
+    bodyTypes:[...document.querySelectorAll('[name=carBodyType]:checked')].map(x=>x.value) };
   for (const field of FILTER_FIELDS) {
     const key = 'car' + field[0].toUpperCase() + field.slice(1);
     filters[field] = $(key).value === '' ? null : Number($(key).value);
@@ -1820,7 +1876,7 @@ async function commitNote() {
     hide('noteDialog'); render(); if ($('carDialog').open) renderCarDetails(); toast('Note saved on the server.');
   } catch (error) { toast(error.message,true); }
 }
-const MANUAL_TEXT_FIELDS = ['title','location','registration','image','description','notes','colour','transmission'];
+const MANUAL_TEXT_FIELDS = ['title','location','registration','image','description','notes','colour','bodyType','transmission'];
 const MANUAL_NUMERIC_FIELDS = ['price','year','mileage','engine','bhp'];
 
 function openManualCarDialog(itemId = null) {
@@ -2205,14 +2261,14 @@ $('listingMap').addEventListener('click', mapCarClick);
 $('unmappedCars').addEventListener('click', mapCarClick);
 ['keywordFilter','sourceFilter','sortFilter','changesOnly'].forEach(id => $(id).addEventListener(id === 'keywordFilter'?'input':'change',renderResults));
 RESULT_FILTERS.forEach(id => $(id).addEventListener(
-  id === 'resultTransmission' || id === 'resultColour' || id === 'resultDistanceMax' ? 'change' : 'input',
+  id === 'resultTransmission' || id === 'resultColour' || id === 'resultBodyType' || id === 'resultDistanceMax' ? 'change' : 'input',
   () => {
     if (id === 'resultDistanceMax') distanceFailures.clear();
     renderResults();
   }));
 $('resetResultFilters').addEventListener('click', () => {
   RESULT_FILTERS.forEach(id => $(id).value =
-    id === 'resultTransmission' || id === 'resultColour' ? 'any' : '');
+    id === 'resultTransmission' || id === 'resultColour' || id==='resultBodyType' ? 'any' : '');
   renderResults();
   toast('Displayed-result filters cleared. Search criteria are unchanged.');
 });
