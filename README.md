@@ -1,3 +1,14 @@
+# DriveHub v142.34
+
+## v142.34 — Provider filters, recent updates and more usable price ratings
+
+- Saved search exterior-colour choices now flow to Auto Trader's supported repeated `colour` query parameters when the user selects **confirmed colours only**. The default, **include selected colours plus unknown**, stays ON: provider colour restrictions are withheld when they would discard unknown-colour adverts, and DriveHub removes known incorrect colours locally. This same rule applies to Auto Trader, eBay Browse API, PistonHeads and Facebook. Unconfirmed paint is clearly labelled on relevant result cards, not inferred from thumbnails.
+- Provider-supported search terms continue to narrow discovery: Auto Trader make/model, price, year, maximum mileage and transmission; eBay Browse API keyword, vehicle category and price; Facebook Marketplace title query and price; PistonHeads make/model (other unverified facets are checked locally, not invented).
+- Imported website URLs now preserve the default to include unknown colours, instead of silently becoming strict.
+- **Most recently updated** sort includes new vehicle discoveries and subsequent genuine price changes in one dated timeline, without elevating unchanged adverts after an ordinary scan.
+- Price-versus-mileage ratings are now calculated against the broader collected peer set, independent of display and colour filters; two comparable cars can receive a tentative rating. When a reliable mileage-depreciation rate cannot be inferred, a conservative 3%-per-10,000-mile heuristic is disclosed in the badge tooltip. Cars with no reliable mileage, price or comparable vehicle remain **Not rated** with an explanation. The price-versus-mileage sort uses the same comparison.
+- Existing saved searches, notes and price history are preserved. Real provider site responses and the hosted scanner have not been verified by CI.
+
 # DriveHub v142.33
 
 ## v142.33 — Mileage-adjusted relative prices and six value labels

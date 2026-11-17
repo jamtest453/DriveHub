@@ -23,6 +23,7 @@ def test_autotrader_imports_make_model_prices_year_mileage_colour_transmission()
     assert f["mileageMax"] == 65000
     assert f["transmission"] == "automatic"
     assert f["colours"] == ["blue", "grey"]
+    assert f["includeUnknownColours"] is True, "Imported URLs should retain the app’s include-unknown default"
     assert any("Location/postcode" in warning for warning in parsed["warnings"])
     assert "utm_source" not in str(parsed["warnings"])
     assert "SK12" not in str(parsed)  # Never echo postcode or full URL back.

@@ -247,6 +247,10 @@ def parse_search_url(raw):
         warnings.append("Search phrase is longer than 90 characters; shorten the car name before saving.")
         vehicle = ""
     try:
+        # Imported provider URLs cannot describe DriveHub's own
+        # include-unknown option. Keep the application's checked-by-default
+        # behaviour instead of silently making imported colours strict.
+        raw_filters.setdefault("includeUnknownColours", True)
         filters = validate_filters(raw_filters)
     except ValueError as exc:
         # Inconsistent limits must never produce a misleading accepted import.

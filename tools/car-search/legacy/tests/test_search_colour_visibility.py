@@ -17,6 +17,35 @@ def test_search_requires_confirmed_colour_by_default():
     assert apply_local_filters({"title":"BMW M2 Mineral Grey"},broad,"BMW M2")[0] is False
 
 
+def test_provider_links_respect_user_choice_to_include_unknown_colour():
+    from urllib.parse import parse_qs, urlsplit
+    from src.query_builder import generate_links
+    base={"colours":["blue","grey"],"includeUnknownColours":True}
+    wide=validate_filters(base)
+    links={link["site"]:link for link in generate_links(wide,search_name="BMW M2")}
+    auto=parse_qs(urlsplit(links["autotrader"]["url"]).query)
+    assert "colour" not in auto, "Provider colour facets would exclude missing exterior paint"
+    assert auto["make"] == ["BMW"]
+    assert auto["model"] == ["M2"]
+    assert auto.get("exclude-writeoff-categories") == ["on"]
+    assert "colour" not in parse_qs(urlsplit(links["facebook"]["url"]).query)
+    assert "apiColourFilter" not in links["ebay"]
+    for link in links.values():
+        assert "unknown" in link["sourceNote"].casefold()
+    # Strict mode can use a supported provider colour facet, without
+    # accidentally turning multiple paint choices into one string.
+    narrow=validate_filters({"colours":["blue","grey"],"includeUnknownColours":False})
+    strict={link["site"]:link for link in generate_links(narrow,search_name="BMW M2")}
+    auto=parse_qs(urlsplit(strict["autotrader"]["url"]).query)
+    assert auto["colour"] == ["Blue","Grey"]
+    assert "colour" not in parse_qs(urlsplit(strict["facebook"]["url"]).query)
+    # PistonHeads facet encodings differ; never invent source-side params.
+    assert "price=" not in strict["pistonheads"]["url"]
+    # Known incorrect paint is removed while unknown paint is retained.
+    assert apply_local_filters({"title":"BMW M2 Alpine White"},wide,"BMW M2")[0] is False
+    assert apply_local_filters({"title":"BMW M2"},wide,"BMW M2")[0] is True
+
+
 def test_existing_search_results_update_without_rescan(tmp_path):
     source=Path(__file__).resolve().parents[1]/"public/dashboard.js"
     cases=r"""

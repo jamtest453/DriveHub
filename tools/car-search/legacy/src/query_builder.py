@@ -132,6 +132,7 @@ def generate_links(filters, sources=SOURCES, search_name=None):
             if filters["priceMax"] is not None: params["_udhi"] = filters["priceMax"]
             url = "https://www.ebay.co.uk/sch/i.html?" + urlencode(params)
             note = "eBay uses its Browse API. Vehicle details beyond keywords and price are locally checked when available."
+
         elif site == "facebook":
             params = {"query": combined}
             if filters["priceMin"] is not None: params["minPrice"] = filters["priceMin"]
@@ -160,12 +161,20 @@ def generate_links(filters, sources=SOURCES, search_name=None):
             if filters["mileageMax"] is not None: params["maximum-mileage"] = filters["mileageMax"]
             if filters.get("transmission") in ("automatic", "manual"):
                 params["transmission"] = filters["transmission"].capitalize()
-            url = "https://www.autotrader.co.uk/car-search?" + urlencode(params)
+            # Auto Trader's search uses repeated 'colour' parameters for
+            # multiple selected colours. A source-side colour constraint
+            # would exclude genuine unknowns, so only add it for confirmed-
+            # colour-only searches.
+            if filters["colours"] and not filters["includeUnknownColours"]:
+                params["colour"] = [colour.title() for colour in filters["colours"]]
+            url = "https://www.autotrader.co.uk/car-search?" + urlencode(params, doseq=True)
             note = ("Auto Trader " + (
                 "make/model filters" if identity and identity.model else
                 "make and remaining keywords" if identity else "full keyword search"
             ) + " with nationwide coverage. Write-offs are also excluded locally; "
                 "confirm vehicle history independently.")
+            if filters["colours"] and not filters["includeUnknownColours"]:
+                note += " Selected exterior colours are applied on Auto Trader."
         else:
             if identity:
                 url = "https://www.pistonheads.com/buy/" + identity.make_slug
@@ -185,6 +194,15 @@ def generate_links(filters, sources=SOURCES, search_name=None):
                 url = "https://www.pistonheads.com/buy/search?" + urlencode({"keywords": combined})
                 note = "Unrecognised make: PistonHeads keyword search. Vehicle filters checked locally."
         link = {"site": site, "url": url, "sourceNote": note}
+        if filters["colours"]:
+            if filters["includeUnknownColours"]:
+                link["sourceNote"] += (" Selected exterior colours plus unknowns: "
+                                       "a provider colour filter cannot be used if it "
+                                       "would omit unknown-colour cars. Confirmed mismatches "
+                                       "are hidden by DriveHub.")
+            elif site != "autotrader":
+                link["sourceNote"] += (" Provider has no verified compatible exterior "
+                                       "colour facet; DriveHub checks the advert colour.")
         links.append(link)
     return links
 
