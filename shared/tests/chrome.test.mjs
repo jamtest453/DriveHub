@@ -66,3 +66,8 @@ assert.match(css,/\.drivehub-desktop-nav__actions\{display:flex!important/,'tool
 assert.match(css,/v142\.28: keep branding/,'all tool actions use a single header row');
 assert.match(css,/\.bottom-nav \.gateway-home\{display:none!important\}/,'only the shared logo serves as DriveHub Home');
 assert.match(js,/\.nav-btn:not\(\.gateway-home\)/,'duplicated Home items are not mirrored into the header');
+
+assert.match(css,/\.drivehub-desktop-nav__actions > :first-child\{\s*margin-left:auto!important/,
+  'first visible navigation control pushes the tablet group to the right edge');
+assert.match(css,/\.drivehub-search-select\{margin-left:auto!important\}/,
+  'tablet Search selector is right aligned even when desktop tabs are hidden');
