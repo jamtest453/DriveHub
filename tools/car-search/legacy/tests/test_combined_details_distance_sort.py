@@ -112,6 +112,9 @@ const ensureDistanceLocations=()=>{resolutions++};
 const statusSets=()=>({newIds:new Set(),changedIds:new Set()});
 const grouped=x=>x.map(row=>[row]);
 const baseGroupsForView=grouped;
+// The isolated distance test is not testing the independent value algorithm.
+const priceMileageRatings=()=>new Map();
+const comparePriceMileageGroups=()=>0;
 const matchesResultFilters=()=>true;
 const groupMatchesColour=()=>true,groupMatchesDistance=()=>true;
 const combinedCarDetails=g=>g[0];
