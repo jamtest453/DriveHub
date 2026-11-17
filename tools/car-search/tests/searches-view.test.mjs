@@ -156,7 +156,7 @@ const cardCtx={
   state:{manualDuplicates:{}},mergeFrom:null
 };
 const renderCard=vm.runInNewContext(section('function renderCard(','function openCarDetails(')+'\nrenderCard',cardCtx);
-const result=renderCard([{id:'a',site:'autotrader',price:24500}],{
+const result=renderCard([{id:'a',site:'autotrader',price:24500,location:car.location}],{
   newIds:new Set(),changedIds:new Set()
 });
 assert.match(result,/Hayes <span class="car-location-distance">\(157 miles\)<\/span>/);
@@ -164,7 +164,7 @@ assert.doesNotMatch(result,/≈157 mi/);
 assert.match(result,/data-action="location-map"/);
 assert.doesNotMatch(result,/SK12 2NL|postcode/i);
 car.location='Bristol, BS1 1AA';
-const namedCard=renderCard([{id:'a',site:'autotrader',price:24500}],{
+const namedCard=renderCard([{id:'a',site:'autotrader',price:24500,location:car.location}],{
   newIds:new Set(),changedIds:new Set()
 });
 assert.match(namedCard,/>Bristol/);
