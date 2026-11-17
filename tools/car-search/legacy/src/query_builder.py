@@ -7,6 +7,7 @@ import re
 import os
 from urllib.parse import urlencode
 from .colour import COLOUR_CHOICES, listing_exterior_colour
+from .vehicle_names import resolve_vehicle_query
 
 SOURCES = ("autotrader", "ebay", "pistonheads", "facebook")
 TRANSMISSIONS = ("any", "automatic", "manual")
@@ -121,6 +122,7 @@ def generate_links(filters, sources=SOURCES, search_name=None):
     if not vehicle:
         raise ValueError("Enter a car name or make/model to search.")
     combined = vehicle
+    identity = resolve_vehicle_query(vehicle)
     links = []
     for site in sources:
         note = ""
@@ -137,12 +139,20 @@ def generate_links(filters, sources=SOURCES, search_name=None):
             url = "https://www.facebook.com/marketplace/search/?" + urlencode(params)
             note = "Facebook title must contain search terms. Other filters checked locally if advertised."
         elif site == "autotrader":
-            # Never attempt to infer a provider make/model from the search name.
-            # Use Auto Trader's own Keywords field for the complete phrase.
+            # Use genuine provider make/model filters where recognised. Any
+            # unknown remainder is a keyword, never a guessed model value.
             params = {"channel": "cars", "postcode": autotrader_postcode(),
                       "radius": "1500", "sort": "relevance",
-                      "price_search_type": "total", "keywords": combined,
+                      "price_search_type": "total",
                       "exclude-writeoff-categories": "on"}
+            if identity:
+                params["make"] = identity.make
+                if identity.model:
+                    params["model"] = identity.model
+                elif identity.keywords:
+                    params["keywords"] = identity.keywords
+            else:
+                params["keywords"] = combined
             if filters["priceMin"] is not None: params["price-from"] = filters["priceMin"]
             if filters["priceMax"] is not None: params["price-to"] = filters["priceMax"]
             if filters["yearMin"] is not None: params["year-from"] = filters["yearMin"]
@@ -151,17 +161,29 @@ def generate_links(filters, sources=SOURCES, search_name=None):
             if filters.get("transmission") in ("automatic", "manual"):
                 params["transmission"] = filters["transmission"].capitalize()
             url = "https://www.autotrader.co.uk/car-search?" + urlencode(params)
-            note = ("Auto Trader full-keyword UK-wide search, with its "
-                    "exclude-writeoff-categories=on setting. Clearly recorded "
-                    "write-offs are also excluded locally; confirm vehicle "
-                    "history independently before buying.")
+            note = ("Auto Trader " + (
+                "make/model filters" if identity and identity.model else
+                "make and remaining keywords" if identity else "full keyword search"
+            ) + " with nationwide coverage. Write-offs are also excluded locally; "
+                "confirm vehicle history independently.")
         else:
-            # PistonHeads' Keywords field receives the complete search text.
-            # No guessed or hard-coded make-id/model-id values.
-            url = "https://www.pistonheads.com/buy/search?" + urlencode({"keywords": combined})
-            note = ("Uses the PistonHeads Keywords field for the complete car "
-                    "name and optional extra terms. Numeric ranges and colours "
-                    "are checked locally when listed.")
+            if identity:
+                url = "https://www.pistonheads.com/buy/" + identity.make_slug
+                if identity.model_slug:
+                    # Known PistonHeads public make/model paths, not guessed IDs.
+                    url += "/" + identity.model_slug
+                    note = "PistonHeads make/model page; remaining search criteria are checked locally."
+                elif identity.keywords or identity.model:
+                    # An unrecognised model stays a keyword, with the make
+                    # restricted by its public maker page.
+                    keywords = identity.keywords or combined.split(" ", 1)[-1]
+                    url += "?" + urlencode({"keywords": keywords})
+                    note = "PistonHeads make page with keyword fallback. Verify local criteria against the advert."
+                else:
+                    note = "PistonHeads make page; vehicle filters checked locally."
+            else:
+                url = "https://www.pistonheads.com/buy/search?" + urlencode({"keywords": combined})
+                note = "Unrecognised make: PistonHeads keyword search. Vehicle filters checked locally."
         link = {"site": site, "url": url, "sourceNote": note}
         links.append(link)
     return links
