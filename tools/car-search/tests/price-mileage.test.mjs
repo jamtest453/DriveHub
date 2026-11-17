@@ -97,24 +97,41 @@ const unknown=scoring.priceMileageRatings([
 for(const id of ['unknown','noPrice','distanceNotMiles'])
   assert.equal(unknown.get(id).label,'Not rated',id);
 
-// No empirical depreciation signal: do not fabricate a rate.
+// A noisy/mismatched sample now provides a transparent conservative
+// estimate, rather than marking all usable cars "Not rated".
 const noRelationship=[
   car('n1',20000,20000),car('n2',22000,40000),
   car('n3',24000,60000),car('n4',26000,80000)
 ];
-for(const result of scoring.priceMileageRatings(noRelationship).values())
-  assert.equal(result.label,'Not rated');
+for(const result of scoring.priceMileageRatings(noRelationship).values()) {
+  assert.notEqual(result.label,'Not rated');
+  assert.match(result.reason,/Approximate mileage allowance/);
+}
 
-// Two cars cannot prove a mileage depreciation curve. The sort falls back to
-// asking price with mileage as a tie-breaker rather than fake 60/40 scoring.
+// Two cars provide a provisional within-cohort comparison. The badge tooltip
+// must distinguish a heuristic from a rate actually observed in same-year ads.
 const tiny=[
   car('cheapHighMiles',24000,90000),
   car('slightlyDearerLowMiles',25500,20000)
 ];
 const small=scoring.priceMileageRatings(tiny);
-assert.equal(small.get('cheapHighMiles').label,'Not rated');
-assert.equal(small.get('slightlyDearerLowMiles').label,'Not rated');
+for(const result of small.values()) {
+  assert.notEqual(result.label,'Not rated');
+  assert.match(result.reason,/Approximate mileage allowance/);
+}
 assert.deepEqual([...tiny].sort((a,b)=>
   scoring.comparePriceMileageGroups(a,b,small)).map(g=>g[0].id),
   ['cheapHighMiles','slightlyDearerLowMiles']);
+// Same model up to two years apart is permitted only when closer-year
+// comparables are unavailable.
+const nearby=scoring.priceMileageRatings([
+  car('twoYearsEarlier',23500,60000,{year:2017}),
+  car('twoYearsLater',25500,30000,{year:2019})
+]);
+assert.equal(nearby.get('twoYearsEarlier').peers,2);
+assert.notEqual(nearby.get('twoYearsLater').label,'Not rated');
+// Genuinely uncomparable vehicles retain a truthful explanation.
+const singleton=scoring.priceMileageRatings([car('single',24500,50000)]);
+assert.equal(singleton.get('single').label,'Not rated');
+assert.match(singleton.get('single').reason,/No second comparable/);
 console.log('Mileage-derived depreciation, six rating bands and sorting passed');
