@@ -424,7 +424,7 @@ async def enrich_saved_listing(item_id):
             locked = set(current.get("manualFields") or [])
             for field in ("title", "description", "image", "year", "mileage",
                           "location", "registration", "engine", "bhp",
-                          "transmission"):
+                          "transmission", "bodyType"):
                 # A placeholder title is not owner-entered vehicle evidence.
                 placeholder = field == "title" and current.get("titleSource") == "placeholder"
                 if (field not in locked and
@@ -763,7 +763,7 @@ def update_listing(item, stamp):
         old['priceHistory'] = (old.get('priceHistory', []) + [{'price': price, 'at': stamp}])[-80:]
     locked = set(old.get("manualFields") or [])
     for field in ('url', 'title', 'image', 'year', 'mileage', 'location', 'registration',
-                  'engine', 'bhp', 'transmission', 'description', 'unverifiedFilters'):
+                  'engine', 'bhp', 'transmission', 'bodyType', 'description', 'unverifiedFilters'):
         if field not in locked and item.get(field) not in (None, ''):
             old[field] = item[field]
     # Re-evaluate legacy colour guesses on refresh instead of preserving a
@@ -837,7 +837,7 @@ async def perform_scan(search_ids):
                                     # does not. Apply vehicle search colour to the entire
                                     # deduplicated group in the dashboard, not to isolated
                                     # source adverts at ingestion.
-                                    scan_filters = {**search['filters'], 'colours': []}
+                                    scan_filters = {**search['filters'], 'colours': [], 'bodyTypes': []}
                                     include, missing = apply_local_filters(item, scan_filters, search['name'])
                                     if not include:
                                         continue
