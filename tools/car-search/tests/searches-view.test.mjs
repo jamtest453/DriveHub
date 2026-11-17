@@ -83,7 +83,7 @@ const cardCtx={
   imageUrl:()=>'',linkUrl:()=>'',getSearch:()=>null,
   hasSeparatedMatches:()=>false,when:()=> '17 Nov',
   fmtPrice:()=> '£24,500',esc:value=>String(value),
-  mergeFrom:null
+  state:{manualDuplicates:{}},mergeFrom:null
 };
 const renderCard=vm.runInNewContext(section('function renderCard(','function openCarDetails(')+'\nrenderCard',cardCtx);
 const result=renderCard([{id:'a',site:'autotrader',price:24500}],{
