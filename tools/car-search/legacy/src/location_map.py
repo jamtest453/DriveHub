@@ -5,6 +5,7 @@ harvesting, invented locations or external requests from the browser.
 Locations are public advert text and pins indicate approximate area centres.
 """
 import asyncio
+from difflib import SequenceMatcher
 import json
 import math
 import os
@@ -19,14 +20,17 @@ UK_LAT = (49.0, 61.5)
 UK_LON = (-9.0, 2.6)
 POSTCODE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b", re.I)
 OUTCODE = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]?$", re.I)
-DISTANCE_SUFFIX = re.compile(r"\s*\(\s*(\d{1,4}(?:\.\d+)?)\s*(?:miles?|mi)\s*\)\s*$", re.I)
+DISTANCE_SUFFIX = re.compile(
+    r"\s*(?:\(\s*(\d{1,4}(?:\.\d+)?)\s*(?:miles?|mi)\s*\)"
+    r"|[·,;|–—-]\s*(\d{1,4}(?:\.\d+)?)\s*(?:miles?|mi)\s*(?:away|from you)?"
+    r")\s*$", re.I)
 
 
 def distance_hint(raw):
     match = DISTANCE_SUFFIX.search(raw) if isinstance(raw, str) else None
     if not match:
         return None
-    miles = float(match.group(1))
+    miles = float(match.group(1) or match.group(2))
     return miles if 0 < miles < 900 else None
 
 
@@ -35,7 +39,11 @@ def cache_key(raw):
     miles = distance_hint(raw)
     # v2 avoids reusing older negative results that ignored settlement type
     # and gave ambiguous names like Hayes the wrong candidate.
-    return cleaned + ("|%.1fmi|placev3" % miles if miles else "|placev3")
+    postcode = POSTCODE.search(raw) if isinstance(raw, str) else None
+    exact = ("|postcode:" + re.sub(r"\s+", "", postcode.group(1)).casefold()) if postcode else ""
+    # Keep postcode, county and distance clues in the lookup identity even
+    # though the card's display label omits them.
+    return cleaned + exact + ("|%.1fmi|placev4" % miles if miles else "|placev4")
 
 
 
@@ -78,7 +86,10 @@ def clean_location(raw):
 
 
 def place_request(raw):
-    """Return (type, value, disambiguation), never infer a postcode from title."""
+    """Return (type, value, disambiguation), preserving full postcodes."""
+    full = POSTCODE.search(raw) if isinstance(raw, str) else None
+    if full:
+        return ("postcode", re.sub(r"\s+", "", full.group(1)).upper(), "")
     text = clean_location(raw)
     if not text:
         return None
@@ -120,31 +131,44 @@ def great_circle_miles(a_lat, a_lng, b_lat, b_lng):
     return 3958.8 * 2 * math.asin(min(1, math.sqrt(a)))
 
 
-def find_place(results, name, hint, distance=None, origin=None):
-    """Resolve official UK settlement names, using advertised miles as a clue.
-
-    Distance from the source search postcode is approximate; it is never a
-    postcode or precise seller coordinate. An ambiguous result remains
-    unplaced rather than picking the first city/town or a random Hayes.
-    """
+def find_place_detailed(results, name, hint, distance=None, origin=None):
+    """Return a defensible approximate settlement and an explanation code."""
     if not isinstance(results, list):
-        return None
-    key = name.casefold().strip()
-    exact = [r for r in results if isinstance(r, dict) and any(
-        isinstance(r.get(field), str) and r[field].casefold() == key
-        for field in ("name_1", "name_2")) and r.get("local_type", "").casefold() in PLACE_KINDS]
+        return None, "unmatched"
+    key = " ".join(name.casefold().split())
+    exact = [row for row in results if isinstance(row, dict) and
+             row.get("local_type", "").casefold() in PLACE_KINDS and any(
+                 isinstance(row.get(field), str) and
+                 " ".join(row[field].casefold().split()) == key
+                 for field in ("name_1", "name_2"))]
+    near_match = False
     if not exact:
-        return None
+        # Only accept high-confidence name variants; never pick an arbitrary
+        # fuzzy match from a set of different towns.
+        simplified = lambda value: re.sub(r"[^a-z0-9]", "", value.casefold())
+        target = simplified(name)
+        similar = []
+        for row in results:
+            if not isinstance(row, dict) or row.get("local_type", "").casefold() not in PLACE_KINDS:
+                continue
+            names = (row.get("name_1"), row.get("name_2"))
+            if any(isinstance(candidate, str) and
+                   (simplified(candidate) == target or
+                    (len(target) >= 6 and
+                     SequenceMatcher(None, target, simplified(candidate)).ratio() >= .92))
+                   for candidate in names):
+                similar.append(row)
+        exact = similar
+        near_match = bool(similar)
+    if not exact:
+        return None, "unmatched"
     if hint:
-        matched = [r for r in exact if any(
-            hint == str(r.get(field) or "").casefold() or
-            hint in str(r.get(field) or "").casefold().split(",")
+        matching = [row for row in exact if any(
+            hint == str(row.get(field) or "").casefold() or
+            hint in str(row.get(field) or "").casefold().split(",")
             for field in ("county_unitary", "district_borough", "region", "country"))]
-        if matched:
-            exact = matched
-    # Use known advertised distance BEFORE sorting by settlement category.
-    # "Hayes" near London can be a suburban area while another Hayes is a
-    # village. Prioritising village/town type would ignore a 157-mile hint.
+        if matching:
+            exact = matching
     if len(exact) > 1 and distance is not None and origin is not None:
         choices = []
         for row in exact:
@@ -155,21 +179,34 @@ def find_place(results, name, hint, distance=None, origin=None):
                 choices.append((delta, row))
         choices.sort(key=lambda entry: entry[0])
         if not choices or choices[0][0] > max(15, distance * .33):
-            return None
-        # Closely ranked towns remain ambiguous: road distances, seller
-        # search anchors and city-centre coordinates are only approximations.
+            return None, "ambiguous"
         if len(choices) > 1 and choices[1][0] - choices[0][0] < max(6, distance * .065):
-            return None
+            return None, "ambiguous"
         chosen = choices[0][1]
         precision = "Town centre inferred from advertised distance (approx.)"
     elif len(exact) == 1:
         chosen = exact[0]
-        precision = "Town or city centre (approx.)"
+        precision = ("Town or locality name matched approximately" if near_match
+                     else "Town or city centre") + " (approx.)"
     else:
-        # Without corroborating miles or a county there is no safe way to
-        # select one of multiple UK places with the same name.
-        return None
-    return valid_point(chosen, precision, str(chosen.get("name_1") or name))
+        return None, "ambiguous"
+    point = valid_point(chosen, precision, str(chosen.get("name_1") or name))
+    return (point, "mapped") if point else (None, "unmatched")
+
+
+def find_place(results, name, hint, distance=None, origin=None):
+    return find_place_detailed(results, name, hint, distance, origin)[0]
+
+
+LOCATION_STATUS = {
+    "mapped": "Approximate advertised area located.",
+    "missing": "This advert does not provide a usable location.",
+    "ambiguous": "Several UK places match this name. A postcode or county would help.",
+    "unmatched": "No reliable UK place match was found for the advertised location.",
+    "invalid_postcode": "The advertised postcode could not be found.",
+    "unsupported": "The advertised location cannot be interpreted as a UK place.",
+    "temporary": "The location service could not be reached. Please retry.",
+}
 
 
 class LocationResolver:
@@ -180,6 +217,7 @@ class LocationResolver:
         self.origin_lock = asyncio.Lock()
         self.origin_coords = None
         self.origin_postcode = None
+        self.lookup_status = {}
 
     def _load_cache(self, file):
         if self.cache is not None and file == self.cache_file:
@@ -223,6 +261,13 @@ class LocationResolver:
     async def _lookup(self, client, request):
         kind, value, hint, *extra = request
         miles = extra[0] if extra else None
+        fallback = extra[1] if len(extra) > 1 else None
+
+        def finish(point, definitive, status=None):
+            self.lookup_status[request] = (status or ("mapped" if point else
+                                                     "unmatched" if definitive else "temporary"))
+            return point, definitive
+
         if kind == "postcode":
             url = "https://api.postcodes.io/postcodes/" + quote(value, safe="")
             precision = "Postcode centroid (approx.)"
@@ -232,31 +277,42 @@ class LocationResolver:
         else:
             url = "https://api.postcodes.io/places"
             precision = "Town or city centre (approx.)"
+
+        async def postcode_fallback():
+            # Wrong full postcode need not hide the correctly named town.
+            if fallback:
+                secondary = (*fallback, miles)
+                point, definitive = await self._lookup(client, secondary)
+                return finish(point, definitive, self.lookup_status.get(secondary))
+            return finish(None, True, "invalid_postcode")
+
         try:
-            response = await client.get(url, params={"q": value, "limit": 75} if kind == "place" else None)
+            response = await client.get(url, params={"q": value, "limit": 100}
+                                        if kind == "place" else None)
             if response.status_code == 404:
-                return None, True
+                return await postcode_fallback() if kind == "postcode" else finish(
+                    None, True, "invalid_postcode" if kind == "outcode" else "unmatched")
             if response.status_code != 200:
-                return None, False
+                return finish(None, False, "temporary")
             result = response.json().get("result")
             if kind == "place":
                 origin = await self._origin(client) if miles is not None else None
-                return find_place(result, value, hint, distance=miles, origin=origin), True
-            # Postcodes.io gives administrative place names alongside the
-            # postcode coordinates. Show an area name, never a raw postcode,
-            # in marker captions and location dialogs.
-            locality = value
-            if isinstance(result, dict):
-                locality = next((str(result.get(k)).strip() for k in
-                    ("parish", "admin_ward", "admin_district", "region")
-                    if result.get(k) and str(result[k]).strip().casefold() not in
-                    ("unparished area", "unparished", "none")), "Advertised area")
-            return valid_point(result, precision, locality), True
+                point, status = find_place_detailed(result, value, hint, miles, origin)
+                return finish(point, True, status)
+            if not isinstance(result, dict):
+                return await postcode_fallback() if kind == "postcode" else finish(
+                    None, True, "invalid_postcode")
+            locality = next((str(result.get(k)).strip() for k in
+                ("parish", "admin_ward", "admin_district", "region")
+                if result.get(k) and str(result[k]).strip().casefold() not in
+                ("unparished area", "unparished", "none")), "Advertised area")
+            point = valid_point(result, precision, locality)
+            return finish(point, True, "mapped" if point else "invalid_postcode")
         except (httpx.HTTPError, ValueError, AttributeError, TypeError):
-            return None, False
+            return finish(None, False, "temporary")
 
-    async def resolve(self, locations, data_dir=None):
-        """Return a matching result for each advertised location, including misses."""
+    async def resolve(self, locations, data_dir=None, *, retry=False):
+        """Resolve locations with diagnostics; explicit retry skips negative cache."""
         if not isinstance(locations, list) or len(locations) > 30 or any(
             not isinstance(loc, str) or len(loc) > 120 for loc in locations
         ):
@@ -265,47 +321,72 @@ class LocationResolver:
         cache_path = data / "location-map-cache.json"
         async with self.lock:
             self._load_cache(cache_path)
+            self.lookup_status = {}
             now = time.time()
             pending = {}
             output = {}
             for location in locations:
                 raw = clean_location(location)
                 if not raw:
-                    output[location] = None
+                    status = "missing" if not str(location).strip() or str(location).strip().casefold() in IGNORED else "unsupported"
+                    output[location] = (None, status)
                     continue
                 key = cache_key(location)
                 cached = self.cache.get(key)
-                if cached and (cached.get("point") is not None or now - cached.get("checked", 0) < 86400):
-                    output[location] = cached.get("point")
+                if cached and (cached.get("point") is not None or
+                    (not retry and now - cached.get("checked", 0) < 86400)):
+                    point = cached.get("point")
+                    output[location] = (point, cached.get("status") or
+                        ("mapped" if point else "unmatched"))
                 else:
-                    request = place_request(raw)
+                    request = place_request(location)
                     if request:
-                        pending[key] = (*request, distance_hint(location))
+                        # Full postcodes are tried before the named locality,
+                        # but a bad postcode can still fall back to a town.
+                        fallback = None
+                        if request[0] == "postcode":
+                            town = place_request(raw)
+                            if town and town[0] == "place":
+                                fallback = town
+                        pending[key] = (*request, distance_hint(location), fallback)
                     else:
-                        output[location] = None
+                        output[location] = (None, "unsupported")
             if pending:
-                # Modest parallelism, manual map-only lookups, persisted cache.
                 semaphore = asyncio.Semaphore(3)
                 async with httpx.AsyncClient(timeout=7.0, follow_redirects=False,
-                         headers={"User-Agent": "CarSearchHub/3.9 location-map (postcodes.io)"}) as client:
+                        headers={"User-Agent": "CarSearchHub/4.0 location-map (postcodes.io)"}) as client:
                     async def work(key, request):
                         async with semaphore:
                             point, definitive = await self._lookup(client, request)
-                            return key, point, definitive
+                            status = self.lookup_status.get(request,
+                                     "mapped" if point else
+                                     "unmatched" if definitive else "temporary")
+                            return key, point, definitive, status
                     found = await asyncio.gather(*(work(k, v) for k, v in pending.items()))
                 updated = False
-                for key, point, definitive in found:
+                results = {key: (point, status) for key, point, _, status in found}
+                for key, point, definitive, status in found:
+                    # Upstream errors are never saved as permanent misses.
                     if definitive:
-                        self.cache[key] = {"point": point, "checked": now}
+                        self.cache[key] = {"point": point, "status": status,
+                                           "checked": now}
                         updated = True
                 if updated:
                     try:
                         self._save_cache()
                     except OSError:
-                        pass  # Map can still display resolved locations without disk access.
+                        pass
                 for location in locations:
                     key = cache_key(location)
                     if key in pending:
-                        row = next((x for x in found if x[0] == key), None)
-                        output[location] = row[1] if row else None
-            return [{"location": loc, "point": output.get(loc)} for loc in locations]
+                        output[location] = results.get(key, (None, "temporary"))
+            return [
+                {"location": loc, "point": output.get(loc, (None, "missing"))[0],
+                 "status": output.get(loc, (None, "missing"))[1],
+                 "reason": LOCATION_STATUS.get(
+                     output.get(loc, (None, "missing"))[1],
+                     LOCATION_STATUS["unmatched"]),
+                 "retryable": output.get(loc, (None, "missing"))[1] not in
+                     ("mapped", "missing")}
+                for loc in locations
+            ]

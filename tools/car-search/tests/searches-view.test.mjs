@@ -124,18 +124,24 @@ const mapFns=vm.runInNewContext(section('function mapLocationForGroup(','async f
     cleanAdvertLocation:placeFns.cleanAdvertLocation,
     postcodeOnlyLocation:placeFns.postcodeOnlyLocation,locationPoints:new Map()
   });
-assert.equal(mapFns.mapLocationKey('Hayes (157 miles) · multiple locations'),'hayes');
+assert.equal(mapFns.mapLocationKey('Hayes (157 miles)'),'hayes (157 miles)');
+assert.equal(placeFns.mapLocationForCar({location:'Hayes (157 miles) · multiple locations'}),
+  'Hayes (157 miles)');
 assert.equal(mapFns.mapLocationForGroup([
   {location:'multiple locations'},{location:'Hayes (157 miles) · multiple locations'}
-]),'Hayes');
+]),'Hayes (157 miles)');
 assert.equal(mapFns.mapLocationForGroup([
   {location:'Manchester (21 miles)'},{location:'SK12 2NL'}
-]),'Manchester');
-assert.equal(mapFns.mapLocationKey('Bristol, BS1 1AA'),'bristol');
-assert.equal(mapFns.mapLocationKey('Bristol, BS1'),'bristol');
+]),'SK12 2NL');
+assert.equal(mapFns.mapLocationKey('Bristol, BS1 1AA'),'bristol, bs1 1aa');
+assert.equal(mapFns.mapLocationKey('Bristol, BS1'),'bristol, bs1');
 assert.equal(mapFns.mapLocationKey('SK12 2NL'),'sk12 2nl');
 assert.equal(mapFns.mapLocationForGroup([{location:'SK12 2NL'}]),'SK12 2NL');
 assert.equal(mapFns.mapLocationForGroup([{location:'SK12'}]),'');
+assert.equal(placeFns.mapLocationForCar({location:'Bristol, BS1 1AA'}),
+  'Bristol, BS1 1AA');
+assert.equal(placeFns.mapLocationForCar({location:'Hayes · 157 miles away'}),
+  'Hayes · 157 miles away');
 
 // Distance stays inside the clickable location, in brackets, with no separate chip.
 const car={

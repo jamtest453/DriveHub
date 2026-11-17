@@ -296,8 +296,12 @@ async def map_locations(request: Request):
         not isinstance(value, str) or len(value) > 120 for value in raw
     ):
         raise HTTPException(400, 'Provide at most 30 short listing locations per request.')
+    retry = body.get("retry", False)
+    if not isinstance(retry, bool):
+        raise HTTPException(400, "Retry must be on or off.")
     try:
-        resolved = await LOCATION_RESOLVER.resolve(raw, DATA_DIR)
+        resolved = (await LOCATION_RESOLVER.resolve(raw, DATA_DIR, retry=True)
+                    if retry else await LOCATION_RESOLVER.resolve(raw, DATA_DIR))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {'locations': resolved}

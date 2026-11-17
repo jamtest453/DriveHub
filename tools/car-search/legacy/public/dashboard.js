@@ -68,6 +68,9 @@ function resetDerivedCache() {
 let resultsLayout = 'list';
 let listingMap = null, listingMapLayer = null;
 const locationPoints = new Map();
+const locationIssues = new Map();
+let lastMapGroups = [];
+let activeModalLocationIds = [];
 const DISTANCE_ORIGIN = {lat:53.36397,lng:-2.06781,label:'High Lane, Stockport'};
 const distanceLookups = new Set();
 const distanceFailures = new Set();
@@ -907,7 +910,35 @@ function locationForCar(car) {
   return cleanAdvertLocation(car?.location).split(',')[0].trim();
 }
 function mapLocationForCar(car) {
-  return cleanAdvertLocation(car?.location) || postcodeOnlyLocation(car?.location);
+  const original=String(car?.location||'').replace(/\s+/g,' ').trim();
+  if (!cleanAdvertLocation(original) && !postcodeOnlyLocation(original)) return '';
+  // Mapping sees the original postcode and mileage evidence. The card's
+  // visible place label is independently cleaned by locationForCar().
+  return original.replace(/\s*\(\s*multiple locations\s*\)/ig,'')
+    .replace(/\s*[·,;|–—-]?\s*multiple locations\s*$/ig,'').trim().slice(0,120);
+}
+function rememberLocationResult(row) {
+  if (!row || typeof row.location!=='string') return;
+  const key=mapLocationKey(row.location);
+  const point=row.point || null;
+  // An older background-distance request must never overwrite a valid
+  // position found by a newer explicit retry.
+  if (!point && locationPoints.get(key)?.lat) return;
+  locationIssues.set(key,{
+    status:row.status || (point?'mapped':'unmatched'),
+    reason:row.reason || (point?'Approximate advertised area located.':
+      'No reliable UK location match was returned.'),
+    retryable:row.retryable!==false && !point
+  });
+  if (point) {
+    locationPoints.set(key,point);
+    distanceFailures.delete(key);
+  } else if (row.status==='temporary') {
+    locationPoints.delete(key);
+    distanceFailures.add(key);
+  } else {
+    locationPoints.set(key,null);
+  }
 }
 function milesForGroup(group) {
   const points=group.map(car => locationPoints.get(mapLocationKey(mapLocationForCar(car))))
@@ -937,14 +968,21 @@ async function ensureDistanceLocations(cars) {
           method:'POST',body:JSON.stringify({locations:chunk})
         });
         for (const row of answer.locations || [])
-          if (row && typeof row.location === 'string')
-            locationPoints.set(mapLocationKey(row.location),row.point || null);
+          rememberLocationResult(row);
         for (const loc of chunk)
-          if (!locationPoints.has(mapLocationKey(loc)))
-            locationPoints.set(mapLocationKey(loc),null);
+          if (!locationPoints.has(mapLocationKey(loc))) {
+            rememberLocationResult({location:loc,status:'temporary',
+              reason:'The location service did not return a result.',retryable:true});
+          }
       } catch(error) {
         console.warn('Could not map some advertised locations:',error.message);
-        for (const loc of chunk) distanceFailures.add(mapLocationKey(loc));
+        for (const loc of chunk) {
+          distanceFailures.add(mapLocationKey(loc));
+          locationIssues.set(mapLocationKey(loc),{
+            status:'temporary',reason:'The location lookup failed: '+error.message,
+            retryable:true
+          });
+        }
         // Do not hammer geocoding repeatedly if it is temporarily offline.
       }
       // Avoid re-building every listing card after every 25 geocodes.
@@ -1233,17 +1271,17 @@ function renderResults() {
 function mapLocationForGroup(group) {
   const locations=[...new Set(group.map(mapLocationForCar).filter(Boolean))];
   if (!locations.length) return '';
-  // A named locality is preferable to a raw postcode; a county qualifier
-  // helps the resolver distinguish similarly named towns.
-  const names=locations.filter(loc=>!!cleanAdvertLocation(loc));
-  const choices=names.length ? names : locations;
-  const mapped=choices.find(loc=>locationPoints.get(mapLocationKey(loc))?.lat);
-  if(mapped) return mapped;
-  return [...choices].sort((a,b)=>Number(b.includes(','))-Number(a.includes(',')))[0];
+  // Prefer a reliable full postcode over an ambiguous town name. If the
+  // postcode failed to resolve, use any other independently mapped source.
+  const ranked=[...locations].sort((a,b)=>
+    Number(!!postcodeOnlyLocation(b))-Number(!!postcodeOnlyLocation(a)) ||
+    Number(b.includes(','))-Number(a.includes(',')));
+  return ranked.find(loc=>locationPoints.get(mapLocationKey(loc))?.lat) || ranked[0];
 }
 function mapLocationKey(location) {
-  const place=cleanAdvertLocation(location);
-  return (place || postcodeOnlyLocation(location)).toLowerCase();
+  // Do not collapse a full postcode or mileage hint into a generic town:
+  // "Hayes (40 miles)" is not necessarily the same Hayes as 157 miles.
+  return String(location||'').trim().replace(/\s+/g,' ').toLowerCase();
 }
 let leafletFallbackPromise=null;
 async function ensureMapLibrary() {
@@ -1268,11 +1306,13 @@ async function ensureMapLibrary() {
 }
 async function showCarLocation(ids) {
   const rows=ids.map(id=>state.listings[id]).filter(Boolean);
+  activeModalLocationIds=[...ids];
   const location=mapLocationForGroup(rows);
   if (!location) { toast('This listing has no advertised location to map.',true); return; }
   const serial=++locationModalRequest;
   $('locationModalTitle').textContent=locationForCar({location}) || 'Advertised area';
   $('locationMapDescription').textContent='Finding the approximate advertised area…';
+  $('retryLocationMap').classList.add('hidden');
   const dialog=$('locationDialog');
   if (!dialog.open) show('locationDialog');
   const wrap=$('locationMiniMap');
@@ -1297,17 +1337,24 @@ async function showCarLocation(ids) {
       const data=await api('/api/map/locations',{
         method:'POST',body:JSON.stringify({locations:[location]})
       });
-      point=(data.locations||[]).find(item=>item.location===location)?.point||null;
-      locationPoints.set(mapLocationKey(location),point);
+      const row=(data.locations||[]).find(item=>item.location===location);
+      if(row) rememberLocationResult(row);
+      point=row?.point || null;
     } catch(error) {
-      $('locationMapDescription').textContent='Could not locate this advertised area: '+error.message;
+      $('locationMapDescription').textContent='Location lookup failed: '+error.message;
+      locationIssues.set(mapLocationKey(location),{status:'temporary',
+        reason:'Location lookup failed: '+error.message,retryable:true});
+      $('retryLocationMap').classList.remove('hidden');
       return;
     }
   }
   if (serial!==locationModalRequest || !dialog.open) return;
   if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng) ||
       point.lat<49 || point.lat>61.5 || point.lng< -9 || point.lng>2.6) {
-    $('locationMapDescription').textContent='The advertised area could not be located confidently.';
+    const issue=locationIssues.get(mapLocationKey(location));
+    $('locationMapDescription').textContent=issue?.reason ||
+      'The advertised area could not be located confidently.';
+    $('retryLocationMap').classList.remove('hidden');
     return;
   }
   // A regional zoom (not street zoom) makes the surrounding area clear.
@@ -1398,26 +1445,55 @@ function redrawListingMap(groups, pending=0, failed=false) {
     ? 'Finding ' + pending + ' advertised locations…'
     : failed ? 'Some locations could not be checked right now.'
     : (clusters.size + ' approximate locations · ' + unmapped.length + ' cars without a map position');
-  const missingLocation = unmapped.filter(({location}) => !location).length;
-  const knownButUnresolved = unmapped.length - missingLocation;
+  const missingLocation=unmapped.filter(({group,location})=>
+    !location && !group.some(car=>String(car.location||'').trim())).length;
+  const availableRetries=unmapped.filter(({group})=>
+    group.some(car=>locationIssues.get(mapLocationKey(mapLocationForCar(car)))?.retryable)).length;
+  const reasonFor=({group,location})=>{
+    if (!location) return group.some(car=>String(car.location||'').trim()) ?
+      'The advertised text is not a usable UK location.' :
+      'No advertised location supplied.';
+    const issues=group.map(mapLocationForCar).filter(Boolean)
+      .map(loc=>locationIssues.get(mapLocationKey(loc))).filter(Boolean);
+    // Report a real failure before a speculative pending status.
+    const issue=issues.find(row=>row.status==='ambiguous') ||
+      issues.find(row=>row.status==='temporary') ||
+      issues.find(row=>row.status==='invalid_postcode') ||
+      issues.find(row=>row.status==='unsupported') ||
+      issues.find(row=>row.status==='unmatched') ||
+      issues[0];
+    return issue?.reason || (pending ? 'Checking advertised location…' :
+      'Location has not yet been checked.');
+  };
   $('unmappedCars').innerHTML = unmapped.length ? (
     '<details class="unmapped-details"><summary>' + unmapped.length +
-    (unmapped.length===1 ? ' car' : ' cars') +
-    ' not placed on the map <span>— ' + knownButUnresolved +
-    ' advertised locations could not be matched uniquely' +
-    (missingLocation ? '; ' + missingLocation + ' have no location' : '') +
-    (pending ? ' (geocoding in progress)' : '') + '</span></summary>' +
-    '<div class="unmapped-list">' + unmapped.map(({group,location}) => {
-      const primary = group[0];
-      return '<button type="button" class="unmapped-item" data-map-ids="' +
-        esc(group.map(c=>c.id).join(',')) + '"><span>' + esc(primary.title) +
-        '</span><small>' + esc(locationForCar({location}) || (location ? 'Advertised area' : 'Location not provided')) + '</small></button>';
+    (unmapped.length===1?' car':' cars') +
+    ' not placed on the map <span>— ' + missingLocation +
+    ' with no advertised location' + (pending?' · Checking locations…':'') +
+    '</span></summary>' +
+    (availableRetries?
+      '<div class="unmapped-actions"><button type="button" class="button quiet" data-map-retry="all">Retry ' +
+      availableRetries + ' unresolved ' +
+      (availableRetries===1?'car':'cars') + '</button></div>' : '') +
+    '<div class="unmapped-list">' + unmapped.map(item=>{
+      const {group,location}=item;
+      const primary=group[0];
+      const hasFailure=group.some(car=>
+        locationIssues.get(mapLocationKey(mapLocationForCar(car)))?.retryable);
+      const ids=esc(group.map(car=>car.id).join(','));
+      return '<div class="unmapped-row"><button type="button" class="unmapped-item" data-map-ids="' +
+        ids + '"><span>' + esc(primary.title) +
+        '</span><small>' + esc(locationForCar({location}) || 'Advertised area unavailable') +
+        ' · ' + esc(reasonFor(item)) + '</small></button>' +
+        (hasFailure ? '<button type="button" class="button quiet unmapped-retry" data-map-retry="' +
+          ids + '">Retry</button>' : '') + '</div>';
     }).join('') + '</div></details>'
   ) : '';
   requestAnimationFrame(() => listingMap.invalidateSize());
 }
 async function showListingsMap(groups) {
   mapShown = true;
+  lastMapGroups=groups;
   const ticket=++mapRequestId;
   $('mapCount').textContent='Preparing map…';
   if (!await ensureMapLibrary()) {
@@ -1449,11 +1525,12 @@ async function showListingsMap(groups) {
       const answer = await api('/api/map/locations',{
         method:'POST',body:JSON.stringify({locations:chunk})
       });
-      for (const row of answer.locations || []) {
-        if (row && typeof row.location === 'string') {
-          locationPoints.set(mapLocationKey(row.location), row.point || null);
-        }
-      }
+      for (const row of answer.locations || []) rememberLocationResult(row);
+      for (const location of chunk)
+        if (!locationPoints.has(mapLocationKey(location)) &&
+            !locationIssues.has(mapLocationKey(location)))
+          rememberLocationResult({location,status:'temporary',
+            reason:'The location service returned no result.',retryable:true});
     } catch (error) {
       failed = true;
       console.warn('Advert location map lookup failed:', error.message);
@@ -1466,6 +1543,57 @@ async function showListingsMap(groups) {
     redrawListingMap(groups,remaining,failed);
   }
   if (!missing.length) redrawListingMap(groups,0);
+}
+async function retryMapLocations(locations) {
+  const unique=[...new Set(locations.filter(Boolean))];
+  if (!unique.length) return;
+  ++mapRequestId; // Ignore in-flight older geocoding results.
+  for(const loc of unique) {
+    const key=mapLocationKey(loc);
+    locationPoints.delete(key);
+    locationIssues.delete(key);
+    distanceFailures.delete(key);
+  }
+  for(let index=0;index<unique.length;index+=25) {
+    const chunk=unique.slice(index,index+25);
+    try {
+      const response=await api('/api/map/locations',{
+        method:'POST',body:JSON.stringify({locations:chunk,retry:true})
+      });
+      for(const row of response.locations || []) rememberLocationResult(row);
+    } catch(error) {
+      for(const location of chunk) {
+        const key=mapLocationKey(location);
+        distanceFailures.add(key);
+        locationIssues.set(key,{status:'temporary',
+          reason:'Retry failed: '+error.message,retryable:true});
+      }
+    }
+  }
+}
+async function retryUnmappedLocations(event) {
+  const button=event.target.closest('[data-map-retry]');
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const all=button.dataset.mapRetry==='all';
+  const ids=all?null:new Set(button.dataset.mapRetry.split(','));
+  const groups=lastMapGroups.filter(g=>
+    !ids || g.some(car=>ids.has(car.id)));
+  const unresolved=groups.filter(g=>{
+    const location=mapLocationForGroup(g);
+    return location && !locationPoints.get(mapLocationKey(location))?.lat;
+  });
+  const locations=unresolved.flatMap(g=>g.map(mapLocationForCar).filter(Boolean));
+  button.disabled=true;
+  button.textContent='Retrying…';
+  await retryMapLocations(locations);
+  if (resultsLayout==='map') renderResults();
+}
+async function retryModalLocation() {
+  const rows=activeModalLocationIds.map(id=>state.listings[id]).filter(Boolean);
+  await retryMapLocations(rows.map(mapLocationForCar).filter(Boolean));
+  await showCarLocation(activeModalLocationIds);
 }
 function mapCarClick(event) {
   const element = event.target.closest('[data-map-ids]');
@@ -2299,6 +2427,8 @@ $('mapModeButton').addEventListener('click', () => {
 });
 $('listingMap').addEventListener('click', mapCarClick);
 $('unmappedCars').addEventListener('click', mapCarClick);
+$('unmappedCars').addEventListener('click', retryUnmappedLocations);
+$('retryLocationMap').addEventListener('click', retryModalLocation);
 ['keywordFilter','sourceFilter','sortFilter','changesOnly'].forEach(id => $(id).addEventListener(id === 'keywordFilter'?'input':'change',renderResults));
 RESULT_FILTERS.forEach(id => $(id).addEventListener(
   id === 'resultTransmission' || id === 'resultColour' || id === 'resultBodyType' || id === 'resultDistanceMax' ? 'change' : 'input',

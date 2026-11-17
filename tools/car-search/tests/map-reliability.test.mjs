@@ -26,14 +26,18 @@ const ctx={
   requestAnimationFrame:fn=>fn(),
   ensureMapLibrary:async()=>true,
   initListingMap:()=>true,
-  mapLocationForCar:car=>String(car?.location||'').split(',')[0],
+  mapLocationForCar:car=>String(car?.location||''),
   mapLocationKey:loc=>String(loc||'').toLowerCase(),
   locationPoints:new Map(),
+  locationIssues:new Map(),
+  rememberLocationResult:row=>ctx.locationPoints.set(
+    String(row.location||'').toLowerCase(),row.point||null),
   redrawListingMap:(groups,pending)=>redraws.push({count:groups.length,pending}),
   api:async (path,options)=>{
     assert.equal(path,'/api/map/locations');
     const locations=JSON.parse(options.body).locations;
-    assert.deepEqual(locations,['Bristol'],'map only receives cleaned town');
+    assert.deepEqual(locations,['Bristol, BS1 1AA'],
+      'map receives full postcode, not just the visible town label');
     requests++;
     return {locations:locations.map(location=>({location,point:{
       lat:51.45,lng:-2.59,label:'Bristol',precision:'Town centre (approx.)'

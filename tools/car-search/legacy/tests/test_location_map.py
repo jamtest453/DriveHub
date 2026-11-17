@@ -21,11 +21,11 @@ def test_uk_location_parser_uses_advert_locations_only():
 
 def test_map_query_removes_location_suffixes_and_partial_postcodes():
     cases = {
-        "Bristol, BS1 1AA": ("place", "Bristol", ""),
+        "Bristol, BS1 1AA": ("postcode", "BS11AA", ""),
         "Manchester M2 (28 miles)": ("place", "Manchester", ""),
         "Hayes · 157 miles away": ("place", "Hayes", ""),
         "High Lane, SK12": ("place", "High Lane", ""),
-        "SK12 2NL, High Lane": ("place", "High Lane", ""),
+        "SK12 2NL, High Lane": ("postcode", "SK122NL", ""),
         "Newport, Isle of Wight, PO30": ("place", "Newport", "isle of wight"),
         "Hayes (multiple locations)": ("place", "Hayes", ""),
     }
@@ -125,7 +125,7 @@ def test_hayes_mileage_disambiguates_across_settlement_types():
     assert point and point["lat"] == 51.508
     assert "inferred from advertised distance" in point["precision"]
     assert find_place(alternatives,"Hayes","") is None
-    assert cache_key("Hayes (157 miles)").endswith("|placev3")
+    assert cache_key("Hayes (157 miles)").endswith("|placev4")
 
 
 def test_exact_place_centres_and_ambiguous_locations():
@@ -184,7 +184,7 @@ async def test_map_only_lookup_writes_cache_and_does_not_repeat_requests(tmp_pat
     assert len(called) == 1
     assert (tmp_path / "location-map-cache.json").exists()
     stored = json.loads((tmp_path / "location-map-cache.json").read_text())
-    assert "manchester|placev3" in stored
+    assert "manchester|placev4" in stored
     await resolver.resolve(["Manchester"], tmp_path)
     assert len(called) == 1
 
@@ -203,6 +203,114 @@ async def test_missing_location_does_not_get_a_guessed_pin(tmp_path, monkeypatch
     assert calls == 1
     await resolver.resolve(["Unlistedtown"], tmp_path)
     assert calls == 1  # Negative results cached for at least a day.
+
+
+def test_full_postcode_and_mileage_clues_are_preserved_in_mapping_requests():
+    from src.location_map import cache_key, distance_hint
+    assert place_request("Bristol, BS1 1AA") == ("postcode", "BS11AA", "")
+    assert place_request("High Lane, SK12") == ("place", "High Lane", "")
+    assert distance_hint("Hayes · 157 miles away") == 157
+    assert distance_hint("Hayes (157 miles)") == 157
+    assert cache_key("Bristol BS1 1AA") != cache_key("Bristol BS1 1AB")
+    assert cache_key("Hayes (40 miles)") != cache_key("Hayes (157 miles)")
+
+
+def test_conservative_fuzzy_and_ambiguous_place_diagnostics():
+    from src.location_map import find_place_detailed
+    candidates = [
+        {"name_1": "Stoke-on-Trent", "local_type": "City",
+         "latitude": 53.0027, "longitude": -2.1794}
+    ]
+    point, status = find_place_detailed(candidates, "Stoke On Trent", "")
+    assert status == "mapped" and point["label"] == "Stoke-on-Trent"
+    assert "approximately" in point["precision"]
+    assert find_place_detailed(candidates, "Stoke", "")[1] == "unmatched"
+    newports = [
+        {"name_1": "Newport", "local_type": "Town", "county_unitary": "Newport",
+         "latitude": 51.585, "longitude": -2.998},
+        {"name_1": "Newport", "local_type": "Town", "county_unitary": "Isle of Wight",
+         "latitude": 50.701, "longitude": -1.291},
+    ]
+    assert find_place_detailed(newports, "Newport", "")[1] == "ambiguous"
+    located, status = find_place_detailed(newports, "Newport", "isle of wight")
+    assert status == "mapped" and located["lat"] == 50.701
+
+
+@pytest.mark.asyncio
+async def test_named_town_fallback_for_invalid_full_postcode():
+    resolver = LocationResolver()
+    class FakeResponse:
+        def __init__(self, code, result):
+            self.status_code = code
+            self.result = result
+
+        def json(self):
+            return {"result": self.result}
+    class FakeClient:
+        def __init__(self):
+            self.urls = []
+
+        async def get(self, url, params=None):
+            self.urls.append(url)
+            if "/postcodes/BS11AA" in url:
+                return FakeResponse(404, None)
+            return FakeResponse(200, [
+                {"name_1": "Bristol", "local_type": "City",
+                 "latitude": 51.4545, "longitude": -2.5879}
+            ])
+    fake = FakeClient()
+    request = (*place_request("Bristol, BS1 1AA"), None,
+               place_request(clean_location("Bristol, BS1 1AA")))
+    point, definitive = await resolver._lookup(fake, request)
+    assert definitive and point["label"] == "Bristol"
+    assert fake.urls == [
+        "https://api.postcodes.io/postcodes/BS11AA",
+        "https://api.postcodes.io/places",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_map_failure_reasons_negative_cache_and_manual_retry(tmp_path, monkeypatch):
+    resolver = LocationResolver()
+    calls = 0
+
+    async def mocked(client, request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            resolver.lookup_status[request] = "ambiguous"
+            return None, True
+        return {"lat": 51.585, "lng": -2.998,
+                "label": "Newport", "precision": "Approximate"}, True
+
+    monkeypatch.setattr(resolver, "_lookup", mocked)
+    first = await resolver.resolve(["Newport"], tmp_path)
+    assert first[0]["point"] is None
+    assert first[0]["status"] == "ambiguous"
+    assert "Several UK places" in first[0]["reason"]
+    assert first[0]["retryable"] is True
+    assert (await resolver.resolve(["Newport"], tmp_path))[0]["status"] == "ambiguous"
+    assert calls == 1
+    refreshed = await resolver.resolve(["Newport"], tmp_path, retry=True)
+    assert refreshed[0]["status"] == "mapped"
+    assert calls == 2
+    assert (await resolver.resolve(["Newport"], tmp_path))[0]["point"]["label"] == "Newport"
+    assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_transient_geocode_failure_not_cached(tmp_path, monkeypatch):
+    resolver = LocationResolver()
+    count = 0
+    async def flaky(client, request):
+        nonlocal count
+        count += 1
+        return None, False
+    monkeypatch.setattr(resolver, "_lookup", flaky)
+    for _ in range(2):
+        response = await resolver.resolve(["Manchester"], tmp_path)
+        assert response[0]["status"] == "temporary"
+    assert count == 2
 
 
 @pytest.mark.asyncio
