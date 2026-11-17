@@ -26,7 +26,7 @@ assert.match(js,/const showStatus=/,'shared shell exposes a single transient out
 assert.match(js,/release\.update=/,'shared activities update in place instead of being recreated');
 assert.match(js,/if\(latest\)\{[\s\S]*activity\.dataset\.state='working'/,'working activity takes priority over queued outcomes');
 assert.match(js,/if\(transient\)\{[\s\S]*scheduleTransientHide/,'queued outcomes appear only after work has finished');
-assert.match(js,/drivehubChrome==='14226'/,'shared shell uses the v142.26 initialization guard');
+assert.match(js,/drivehubChrome==='14227'/,'shared shell uses the v142.26 initialization guard');
 assert.match(js,/beginActivity/,'shared shell exposes a reusable concurrent activity API');
 assert.match(runtime,/apiUrl\(path\)/,'shared runtime centralises API routing for browser and native shells');
 assert.match(runtime,/notifyAppReady/,'shared runtime confirms healthy native OTA bundles');
@@ -55,3 +55,10 @@ assert.match(js,/ensureGlobalHeader=/,'every page gets the same shared header');
 assert.match(js,/path\.startsWith\('\/search\/'\)/,'Car Search header uses the shared route context');
 assert.match(css,/v142\.26 · Shared DriveHub header/,'same light DriveHub design is used across tools');
 assert.match(gatewayHtml,/drivehub-chrome\.js\?v=14226/,'the home page also loads the shared header');
+
+assert.match(js,/const findSearchNav=/,'Car Search header reads the live saved search navigation');
+assert.match(js,/searchFrame=frame/,'embedded Car Search frame is connected to the shared header');
+assert.match(js,/searchDoc.getElementById\(id\)\?\.click\(\)/,'Car Search header actions trigger original handlers');
+assert.doesNotMatch(js,/Open full screen/,'Car Search must not offer a separate full-screen link');
+assert.match(css,/\.drivehub-search-select\{/,'saved searches are available as a compact header dropdown');
+assert.match(css,/\.drivehub-desktop-nav__actions\{display:flex!important/,'tool actions remain in the header on phones');
