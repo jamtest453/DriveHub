@@ -300,3 +300,39 @@
   .drivehub-search-action{font-size:11px!important;max-width:80px}
   .drivehub-search-actions .drivehub-desktop-nav__item{padding:0 6px!important}
 }
+
+/* v142.28: keep branding, tool title and all tool actions in one header row. */
+:root{--dh-top-nav-height:76px}
+.drivehub-desktop-nav{
+  display:flex!important;flex-wrap:nowrap!important;
+  height:var(--dh-top-nav-height)!important;
+  align-items:center!important;align-content:center!important;gap:12px!important;
+}
+.drivehub-desktop-nav__brand,.drivehub-desktop-nav__context,.drivehub-desktop-nav__actions{grid-column:auto;grid-row:auto}
+.drivehub-desktop-nav__context{flex:0 0 auto}
+.drivehub-desktop-nav__actions{
+  flex:1 1 auto!important;width:auto!important;min-width:0;
+  height:48px!important;margin-left:auto!important;
+  justify-content:flex-end!important;overflow-x:auto;
+}
+.drivehub-search-tabs{flex:0 1 auto;min-width:0}
+.bottom-nav .gateway-home{display:none!important}
+@media(max-width:899px){
+  :root{--dh-top-nav-height:72px}
+  .drivehub-desktop-nav{padding:6px 10px!important;gap:8px!important}
+  .drivehub-desktop-nav__brand{padding:4px 7px 4px 0!important}
+  .drivehub-desktop-nav__copy{display:none!important}
+  .drivehub-desktop-nav__context{flex:0 0 auto;max-width:90px}
+  .drivehub-desktop-nav__context strong{font-size:16px}
+  .drivehub-desktop-nav__actions{flex:1 1 0!important;display:flex!important;height:44px!important;justify-content:flex-start!important;scrollbar-width:none}
+  .drivehub-search-tabs{display:none!important}
+  .drivehub-search-select{display:block;flex:0 0 108px;min-width:90px;max-width:108px}
+  .drivehub-search-actions{margin-left:0;flex:0 0 auto;gap:3px}
+  .drivehub-search-action{max-width:none;font-size:11px!important}
+}
+@media(max-width:480px){
+  .drivehub-desktop-nav__context{max-width:75px}
+  .drivehub-desktop-nav__context strong{font-size:14px}
+  .drivehub-desktop-nav__mark,.drivehub-desktop-nav__mark svg{width:32px!important;height:32px!important}
+  .drivehub-search-select{flex-basis:95px;max-width:95px}
+}

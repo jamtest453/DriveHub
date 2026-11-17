@@ -24,7 +24,7 @@ const capConfig=fs.readFileSync(path.join(ROOT,'android-shell/capacitor.config.t
 assert.match(capConfig,/appId:'app\.drivehub\.mobile'/,'Android shell has a stable package id placeholder');
 assert.match(capConfig,/webDir:'web'/,'Android shell ships a local fallback web bundle');
 assert.match(capConfig,/autoUpdate:'atBackground'/,'Android updater downloads and applies web releases outside Play');
-assert.match(capConfig,/version:'142\.27\.0'/,'native shell identifies the bundled web baseline to avoid downloading the same release again');
+assert.match(capConfig,/version:'142\.28\.0'/,'native shell identifies the bundled web baseline to avoid downloading the same release again');
 assert.match(capConfig,/DRIVEHUB_OTA_CHANNEL/,'native builds can target stable or beta OTA channels');
 assert.match(capConfig,/\/api\/app\/update\?channel=\$\{otaChannel\}/,'Android shell uses DriveHub self-hosted channel-aware update endpoint');
 assert.match(capConfig,/statsUrl:''/,'self-hosted updater does not send Capgo usage stats');
@@ -83,7 +83,7 @@ try{
   data=await r.json();
   assert.equal(data.error,'no_new_version_available','current web bundle is not re-downloaded');
 
-  r=await update({platform:'android',version_code:'1',version_name:'142.27.0'});
+  r=await update({platform:'android',version_code:'1',version_name:'142.28.0'});
   data=await r.json();
   assert.equal(data.error,'no_new_version_available','a device on a newer web bundle is never downgraded');
 

@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const RELEASE='142.27';
+const RELEASE='142.28';
 const ASSET_VERSION='14221';
 const port=19000+(process.pid%700);
 const base=`http://127.0.0.1:${port}`;

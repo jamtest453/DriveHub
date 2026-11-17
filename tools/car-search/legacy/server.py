@@ -216,7 +216,7 @@ async def photo_hash_worker():
                         current['photoHash'] = fingerprint
                         current['photoStatus'] = 'ready'
                         paint = fingerprint.get('paint')
-                        if paint and paint.get('colour') and paint.get('confidence', 0) >= .78:
+                        if paint and paint.get('colour') and paint.get('confidence', 0) >= .86:
                             current['photoColour'] = paint['colour']
                             current['photoColourConfidence'] = paint['confidence']
                             # Manual edits, labelled paint and title claims outrank

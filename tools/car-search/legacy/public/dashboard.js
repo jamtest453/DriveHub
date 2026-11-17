@@ -480,11 +480,15 @@ function renderSources(search) {
   if (!state.searches.length) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   if (search) {
-    el.innerHTML = `<div class="sources-head"><h2>Search sources</h2><button class="text-button" data-action="delete" data-id="${search.id}">Delete search</button></div><div class="source-rows">` + search.links.map(link => {
+    // Preserve the user's expansion only while refreshing this same search.
+    const wasOpen = el.dataset.searchId === String(search.id) &&
+      el.querySelector('details.search-sources-panel')?.open === true;
+    el.dataset.searchId = String(search.id);
+    el.innerHTML = `<details class="search-sources-panel" ${wasOpen?'open':''}><summary><span class="sources-panel-title">Search sources <small>${search.links.length} websites</small></span><span class="sources-panel-cue">Show sources</span></summary><div class="sources-panel-content"><div class="sources-head"><span>Source checks and website links</span><button class="text-button" data-action="delete" data-id="${search.id}">Delete search</button></div><div class="source-rows">` + search.links.map(link => {
       const shot = state.snapshots[link.id];
       const title = shot?.error ? `<span class="status-error">⚠ ${esc(shot.error)}</span>` : shot?.lastChecked ? `${shot.ids.length} listings seen · ${older(shot.lastChecked)}` : 'Not checked yet';
       return `<div class="source-row">${displaySite(link.site)}<div class="source-copy"><span>${title}</span><small title="${esc(link.sourceNote || '')}">${esc(link.sourceNote || 'Generated search from vehicle filters')}</small></div><button class="button quiet small" data-action="open-url" data-url="${esc(link.url)}">Visit ↗</button></div>`;
-    }).join('') + '</div>';
+    }).join('') + '</div></div></details>';
   } else if (view === 'overview') {
     el.innerHTML = `<div class="sources-head"><h2>Your car searches</h2><span>${state.searches.length} ${state.searches.length === 1 ? 'search':'searches'}</span></div><div class="search-overview-grid">` + state.searches.map(s => {
       const num = grouped(visibleSearchIds(s).map(id => state.listings[id]).filter(Boolean)).length;
@@ -514,6 +518,8 @@ function exteriorColour(car) {
   // Previously inferred black leather/wheel colours have no source: do not
   // treat those legacy values as a verified exterior until rescanned.
   if (!car || !['explicit','title','manual','photo'].includes(car.colourSource)) return '';
+  // Reject weak previously saved estimates as well as new photo observations.
+  if (car.colourSource === 'photo' && Number(car.photoColourConfidence || 0) < .86) return '';
   const value = String(car.colour || '').toLowerCase().trim();
   const canonical = value.replace(/gray/g,'grey');
   return COLOUR_CHOICES.some(name => name.toLowerCase()===canonical)
@@ -629,6 +635,12 @@ function combinedCarDetails(group, preferred=null) {
     group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='explicit')
       ? 'explicit' : group.some(row=>exteriorColour(row)===fields.colour.value && row.colourSource==='title')
       ? 'title' : 'photo';
+  if (combined.colourSource === 'photo') {
+    // The matching colour may come from a different provider than focus.
+    combined.photoColourConfidence = Math.max(0, ...group
+      .filter(row => row.colourSource === 'photo' && exteriorColour(row) === fields.colour.value)
+      .map(row => Number(row.photoColourConfidence) || 0));
+  }
   // This object's fields and sources are for presentation only.
   combined.combinedMeta={
     fields,sources:group.map(row=>({
@@ -1054,13 +1066,28 @@ function renderCard(g, statuses, inHiddenSection=false) {
   const changed = changedItems[0];
   const diff = changed ? changed.price - (changed.previousPrice || changed.price) : 0;
   const activeMerge = !!mergeFrom;
+  // Avoid repeating details already present in the advert title.
+  const titleText = String(car.title || '');
+  const inTitle = value => !!value && titleText.toLowerCase().replace(/[^a-z0-9]/g,'').includes(String(value).toLowerCase().replace(/[^a-z0-9]/g,''));
+  const mileage = car.combinedMeta.fields.mileage.display;
+  const transmission = effectiveTransmission(car);
+  const locationLabel = String(car.location || '').replace(/\s*\(\s*\d+(?:\.\d+)?\s*miles?\s*\)\s*$/i,'').trim();
+  const cardSpecs = [
+    car.year && !inTitle(car.year) ? `<span>${car.year}</span>` : '',
+    mileage && !inTitle(mileage) ? `<span>${esc(mileage)}</span>` : '',
+    locationLabel ? `<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg>${esc(locationLabel)}${car.combinedMeta.fields.location.conflict?' (multiple locations)':''}</button>` : '',
+    distance !== null ? `<span title="Straight-line miles from High Lane, Stockport">≈${Math.round(distance)} mi</span>` : '',
+    exteriorColour(car) && !inTitle(exteriorColour(car)) ? `<span title="${car.colourSource==='photo'?'Estimated from photo (not verified)':car.colourSource==='manual'?'Entered by you':'From advert text'}">${esc(exteriorColour(car))}${car.colourSource==='photo'?' · estimated':''}</span>` : '',
+    car.bhp && !inTitle(`${car.bhp} bhp`) ? `<span>${esc(car.bhp)} bhp</span>` : '',
+    transmission && !inTitle(transmission) && !inTitle('DCT') && !inTitle('DSG') && !inTitle('PDK') ? `<span>${transmission==='automatic'?'Automatic':'Manual'}</span>` : ''
+  ].filter(Boolean).join('');
   const photo=bestPhotoMatch(g);
   const photoBadge=photo ? `<span class="photo-duplicate-label" title="Near-identical advert photo: perceptual image similarity ${photo.score}%. No AI used.">▣ ${photo.score}% photo match</span>` : '';
   const mergeAction = activeMerge ? (ids.includes(mergeFrom) ? `<button class="card-tool" data-action="cancel-merge">Cancel merge</button>` : `<button class="card-tool merge-target" data-action="merge-here" data-id="${esc(car.id)}">Merge here</button>`) : `<button class="card-tool" data-action="merge" data-id="${esc(car.id)}" title="Manually combine duplicate adverts">Merge</button>`;
   return `<article class="listing-card clickable-car" role="button" tabindex="0" aria-label="View details for ${esc(car.title)}. Right-click to open the original advert in a new tab." data-action="car-details" data-ids="${esc(ids.join(','))}" data-url="${esc(linkUrl(car.url))}">
-    <div class="listing-image">${imageUrl(car.image) ? `<img src="${esc(imageUrl(car.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="no-image">▱<small>No photo</small></div>`}<div class="image-badges">${inHiddenSection ? '<span class="flag archived">◌ Hidden</span>' : ''}${hasNew && !inHiddenSection ? `<span class="flag new">● New</span>` : ''}${changedItems.length && !inHiddenSection ? `<span class="flag changed">↘ Price move</span>` : ''}</div></div>
-    <div class="listing-info"><div class="listing-head"><div class="listing-sites">${[...new Set(g.map(x => x.site))].map(x => displaySite(x, 'mini')).join('')}${g.length > 1 ? `<span class="crosslist">${g.length} ads</span>`:''}${photoBadge}</div><button class="heart ${saved?'on':''}" data-action="save" data-ids="${esc(ids.join(','))}" aria-label="${saved?'Remove from saved cars':'Save car'}" title="${saved?'Remove from shortlist':'Save to shortlist'}">${saved?'♥':'♡'}</button></div>
-    <h3 title="${esc(car.title)}">${esc(car.title)}</h3><div class="car-specs">${car.year?`<span>${car.year}</span>`:''}${car.combinedMeta.fields.mileage.display ? `<span>${esc(car.combinedMeta.fields.mileage.display)}</span>` : ''}${car.location?`<button type="button" class="car-location-link" data-action="location-map" data-ids="${esc(ids.join(','))}" title="Show the approximate advertised location on a map"><svg viewBox="0 0 24 24" aria-hidden="true" class="location-pin"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg>${esc(car.location)}${car.combinedMeta.fields.location.conflict?' (multiple locations)':''}</button>`:''}${distance!==null?`<span title="Straight-line miles from High Lane, Stockport">≈${Math.round(distance)} mi away</span>`:''}${exteriorColour(car)?`<span title="${car.colourSource==='photo'?'Estimated from advert photo without AI (approximate; check photo)':car.colourSource==='manual'?'Colour entered by you':'Colour from advert text'}">${esc(exteriorColour(car))}${car.colourSource==='photo'?' · photo estimate':''}</span>`:''}${car.bhp?`<span>${esc(car.bhp)} bhp</span>`:''}${effectiveTransmission(car)?`<span>${effectiveTransmission(car)==='automatic'?'Automatic':'Manual'}</span>`:''}</div>
+    <div class="listing-image">${imageUrl(car.image) ? `<img src="${esc(imageUrl(car.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="no-image">▱<small>No photo</small></div>`}<div class="image-badges">${inHiddenSection ? '<span class="flag archived">◌ Hidden</span>' : ''}${hasNew && !inHiddenSection ? `<span class="flag new">● New</span>` : ''}${changedItems.length && !inHiddenSection ? `<span class="flag changed">↘ Price move</span>` : ''}</div><button class="heart ${saved?'on':''}" data-action="save" data-ids="${esc(ids.join(','))}" aria-label="${saved?'Remove from saved cars':'Save car'}" title="${saved?'Remove from shortlist':'Save to shortlist'}">${saved?'♥':'♡'}</button></div>
+    <div class="listing-info"><div class="listing-head"><div class="listing-sites">${g.length > 1 ? `<span class="crosslist">${g.length} adverts</span>` : ''}${photoBadge}</div></div>
+    <h3 title="${esc(car.title)}">${esc(car.title)}</h3><div class="car-specs">${cardSpecs}</div>
         ${saved && g.some(x => ['queued','running'].includes(x.enrichStatus)) ? '<span class="enrich-indicator">Checking advert details…</span>' : ''}
     <div class="car-price"><strong>${fmtPrice(cheapest.price)}</strong>${changed && diff!==0 ? `<span class="price-move ${diff<0?'drop':'rise'}">${diff<0?'↓':'↑'} ${fmtPrice(Math.abs(diff))} ${diff<0?'drop':'rise'}</span>` : ''}</div>
     ${note ? `<div class="note-preview">✎ ${esc(note.length > 115 ? note.slice(0,115)+'…' : note)}</div>` : ''}
@@ -1348,7 +1375,7 @@ async function importSearchCriteriaFromUrl() {
     }
     $('carTransmission').value = filters.transmission || 'any';
     setupColourChoices(filters.colours || []);
-    $('carStrictColour').checked = filters.includeUnknownColours === true;
+    $('carStrictColour').checked = filters.includeUnknownColours !== false;
     const summary = (imported.applied || []).length ?
       'Imported ' + imported.applied.join(', ') + '.' :
       'No directly transferable filters found.';
@@ -1389,7 +1416,7 @@ function searchDialog(id = null) {
   }
   $('carTransmission').value = found?.filters?.transmission || 'any';
   setupColourChoices(found?.filters?.colours || []);
-  $('carStrictColour').checked = found?.filters?.includeUnknownColours === true;
+  $('carStrictColour').checked = found?.filters?.includeUnknownColours ?? true;
   const chosen = found?.sources || ['autotrader','ebay','pistonheads','facebook'];
   document.querySelectorAll('[name=carSite]').forEach(input => input.checked = chosen.includes(input.value));
   $('searchFormMessage').textContent = found && !found.filters ? 'This search still uses legacy URLs. Enter the car make/model as the search name and save to convert it. The first scan establishes a new baseline.' : '';

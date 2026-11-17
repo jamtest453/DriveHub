@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="drivehub-theme.css">
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous" defer></script>
   <script src="dashboard.js" defer></script>
-  <script src="/shared/public/drivehub-chrome.js?v=14227" defer></script>
+  <script src="/shared/public/drivehub-chrome.js?v=14228" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -120,9 +120,9 @@
       </div>
       <div class="filter-group"><span class="field-label">Exterior colours — select any</span>
         <div id="colourChoices" class="choice-grid" role="group" aria-label="Exterior colours"></div>
-        <label class="colour-strict-choice"><input type="checkbox" id="carStrictColour">
+        <label class="colour-strict-choice"><input type="checkbox" id="carStrictColour" checked>
           Also include cars whose exterior colour is unknown</label>
-        <p class="form-help">Selected colours match confirmed exterior paint by default. Tick this only if you also want adverts where the paint colour is not stated. Colours of seats and wheels are not treated as body paint.</p>
+        <p class="form-help">Cars with unconfirmed exterior colour are included by default. Untick to require a confirmed selected colour. Colours of seats and wheels are not treated as body paint.</p>
       </div>
       <div class="filter-group"><span class="field-label">Search these websites</span>
         <div class="source-choice-row">
