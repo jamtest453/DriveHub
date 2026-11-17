@@ -55,4 +55,28 @@ assert.equal(redraws.length,redrawCount+1,
 ctx.ensureMapLibrary=async()=>false;
 await show([[{id:'B',location:'London',price:22000}]]);
 assert.match(elements.mapCount.textContent,/unavailable/i);
+// Regression: distance lookup polling can repaint a map while its original
+// geocoder request is pending. The replacement must still finish missing
+// locations, even when the listing data signature is identical.
+ctx.ensureMapLibrary=async()=>true;
+let raceCalls=0,releaseFirst;
+const raceGroups=[[{id:'C',location:'Newport',price:17000}]];
+ctx.api=async(path,options)=>{
+  raceCalls++;
+  const locations=JSON.parse(options.body).locations;
+  assert.deepEqual(locations,['Newport']);
+  if(raceCalls===1) return new Promise(resolve=>{releaseFirst=resolve});
+  return {locations:[{location:'Newport',point:{
+    lat:51.587,lng:-2.997,label:'Newport',precision:'Town centre (approx.)'
+  }}]};
+};
+const first=show(raceGroups);
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(raceCalls,1);
+await show(raceGroups);
+assert.equal(raceCalls,2,'map must continue resolving still-missing towns after an interrupted render');
+assert.ok(ctx.locationPoints.has('newport'));
+releaseFirst({locations:[{location:'Newport',point:null}]});
+await first;
 console.log('Map rendering, geocoder lookup and retry checks passed');
