@@ -12,6 +12,6 @@
   // Avoid leaving the full-workspace loading layer over a ready dashboard.
   try{if(frame.contentDocument?.readyState==='complete' && frame.contentDocument?.URL!=='about:blank')reveal()}catch{}
   setTimeout(()=>{
-    if(!done){loading.textContent='Car Search is taking longer than usual. Check your connection or refresh the page to retry.';loading.style.background='rgba(247,251,249,.94)'}
+    if(!done){loading.textContent='Car Search is taking longer than usual. You can also open it separately using the link above.';loading.style.background='rgba(247,251,249,.94)'}
   },10000);
 })();
