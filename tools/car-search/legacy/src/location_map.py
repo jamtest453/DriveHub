@@ -5,6 +5,7 @@ harvesting, invented locations or external requests from the browser.
 Locations are public advert text and pins indicate approximate area centres.
 """
 import asyncio
+from difflib import SequenceMatcher
 import json
 import math
 import os
@@ -19,14 +20,17 @@ UK_LAT = (49.0, 61.5)
 UK_LON = (-9.0, 2.6)
 POSTCODE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b", re.I)
 OUTCODE = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]?$", re.I)
-DISTANCE_SUFFIX = re.compile(r"\s*\(\s*(\d{1,4}(?:\.\d+)?)\s*(?:miles?|mi)\s*\)\s*$", re.I)
+DISTANCE_SUFFIX = re.compile(
+    r"\\s*(?:\\(\\s*(\\d{1,4}(?:\\.\\d+)?)\\s*(?:miles?|mi)\\s*\\)"
+    r"|[·,;|–—-]\\s*(\\d{1,4}(?:\\.\\d+)?)\\s*(?:miles?|mi)\\s*(?:away|from you)?"
+    r")\\s*$", re.I)
 
 
 def distance_hint(raw):
     match = DISTANCE_SUFFIX.search(raw) if isinstance(raw, str) else None
     if not match:
         return None
-    miles = float(match.group(1))
+    miles = float(match.group(1) or match.group(2))
     return miles if 0 < miles < 900 else None
 
 
@@ -35,7 +39,11 @@ def cache_key(raw):
     miles = distance_hint(raw)
     # v2 avoids reusing older negative results that ignored settlement type
     # and gave ambiguous names like Hayes the wrong candidate.
-    return cleaned + ("|%.1fmi|placev3" % miles if miles else "|placev3")
+    postcode = POSTCODE.search(raw) if isinstance(raw, str) else None
+    exact = ("|postcode:" + re.sub(r"\\s+", "", postcode.group(1)).casefold()) if postcode else ""
+    # Keep postcode, county and distance clues in the lookup identity even
+    # though the card's display label omits them.
+    return cleaned + exact + ("|%.1fmi|placev4" % miles if miles else "|placev4")
 
 
 
@@ -78,7 +86,10 @@ def clean_location(raw):
 
 
 def place_request(raw):
-    """Return (type, value, disambiguation), never infer a postcode from title."""
+    """Return (type, value, disambiguation), preserving full postcodes."""
+    full = POSTCODE.search(raw) if isinstance(raw, str) else None
+    if full:
+        return ("postcode", re.sub(r"\\s+", "", full.group(1)).upper(), "")
     text = clean_location(raw)
     if not text:
         return None
@@ -120,31 +131,44 @@ def great_circle_miles(a_lat, a_lng, b_lat, b_lng):
     return 3958.8 * 2 * math.asin(min(1, math.sqrt(a)))
 
 
-def find_place(results, name, hint, distance=None, origin=None):
-    """Resolve official UK settlement names, using advertised miles as a clue.
-
-    Distance from the source search postcode is approximate; it is never a
-    postcode or precise seller coordinate. An ambiguous result remains
-    unplaced rather than picking the first city/town or a random Hayes.
-    """
+def find_place_detailed(results, name, hint, distance=None, origin=None):
+    """Return a defensible approximate settlement and an explanation code."""
     if not isinstance(results, list):
-        return None
-    key = name.casefold().strip()
-    exact = [r for r in results if isinstance(r, dict) and any(
-        isinstance(r.get(field), str) and r[field].casefold() == key
-        for field in ("name_1", "name_2")) and r.get("local_type", "").casefold() in PLACE_KINDS]
+        return None, "unmatched"
+    key = " ".join(name.casefold().split())
+    exact = [row for row in results if isinstance(row, dict) and
+             row.get("local_type", "").casefold() in PLACE_KINDS and any(
+                 isinstance(row.get(field), str) and
+                 " ".join(row[field].casefold().split()) == key
+                 for field in ("name_1", "name_2"))]
+    near_match = False
     if not exact:
-        return None
+        # Only accept high-confidence name variants; never pick an arbitrary
+        # fuzzy match from a set of different towns.
+        simplified = lambda value: re.sub(r"[^a-z0-9]", "", value.casefold())
+        target = simplified(name)
+        similar = []
+        for row in results:
+            if not isinstance(row, dict) or row.get("local_type", "").casefold() not in PLACE_KINDS:
+                continue
+            names = (row.get("name_1"), row.get("name_2"))
+            if any(isinstance(candidate, str) and
+                   (simplified(candidate) == target or
+                    (len(target) >= 6 and
+                     SequenceMatcher(None, target, simplified(candidate)).ratio() >= .92))
+                   for candidate in names):
+                similar.append(row)
+        exact = similar
+        near_match = bool(similar)
+    if not exact:
+        return None, "unmatched"
     if hint:
-        matched = [r for r in exact if any(
-            hint == str(r.get(field) or "").casefold() or
-            hint in str(r.get(field) or "").casefold().split(",")
+        matching = [row for row in exact if any(
+            hint == str(row.get(field) or "").casefold() or
+            hint in str(row.get(field) or "").casefold().split(",")
             for field in ("county_unitary", "district_borough", "region", "country"))]
-        if matched:
-            exact = matched
-    # Use known advertised distance BEFORE sorting by settlement category.
-    # "Hayes" near London can be a suburban area while another Hayes is a
-    # village. Prioritising village/town type would ignore a 157-mile hint.
+        if matching:
+            exact = matching
     if len(exact) > 1 and distance is not None and origin is not None:
         choices = []
         for row in exact:
@@ -155,21 +179,34 @@ def find_place(results, name, hint, distance=None, origin=None):
                 choices.append((delta, row))
         choices.sort(key=lambda entry: entry[0])
         if not choices or choices[0][0] > max(15, distance * .33):
-            return None
-        # Closely ranked towns remain ambiguous: road distances, seller
-        # search anchors and city-centre coordinates are only approximations.
+            return None, "ambiguous"
         if len(choices) > 1 and choices[1][0] - choices[0][0] < max(6, distance * .065):
-            return None
+            return None, "ambiguous"
         chosen = choices[0][1]
         precision = "Town centre inferred from advertised distance (approx.)"
     elif len(exact) == 1:
         chosen = exact[0]
-        precision = "Town or city centre (approx.)"
+        precision = ("Town or locality name matched approximately" if near_match
+                     else "Town or city centre") + " (approx.)"
     else:
-        # Without corroborating miles or a county there is no safe way to
-        # select one of multiple UK places with the same name.
-        return None
-    return valid_point(chosen, precision, str(chosen.get("name_1") or name))
+        return None, "ambiguous"
+    point = valid_point(chosen, precision, str(chosen.get("name_1") or name))
+    return (point, "mapped") if point else (None, "unmatched")
+
+
+def find_place(results, name, hint, distance=None, origin=None):
+    return find_place_detailed(results, name, hint, distance, origin)[0]
+
+
+LOCATION_STATUS = {
+    "mapped": "Approximate advertised area located.",
+    "missing": "This advert does not provide a usable location.",
+    "ambiguous": "Several UK places match this name. A postcode or county would help.",
+    "unmatched": "No reliable UK place match was found for the advertised location.",
+    "invalid_postcode": "The advertised postcode could not be found.",
+    "unsupported": "The advertised location cannot be interpreted as a UK place.",
+    "temporary": "The location service could not be reached. Please retry.",
+}
 
 
 class LocationResolver:
@@ -180,6 +217,7 @@ class LocationResolver:
         self.origin_lock = asyncio.Lock()
         self.origin_coords = None
         self.origin_postcode = None
+        self.lookup_status = {}
 
     def _load_cache(self, file):
         if self.cache is not None and file == self.cache_file:
