@@ -80,6 +80,19 @@ def migrate_hidden_state(raw):
     raw['hiddenPerSearchMigrated'] = True
 
 
+def remove_photo_colour_guesses(raw):
+    """Retire inaccurate image-inferred exterior paints without losing source/manual colour."""
+    for car in raw.get('listings', {}).values():
+        if not isinstance(car, dict):
+            continue
+        for key in ('photoColour', 'photoColourConfidence', 'photoColourCheckedAt'):
+            car.pop(key, None)
+        if car.get('colourSource') == 'photo':
+            # The old image heuristic was not reliable enough to represent exterior paint.
+            car.pop('colour', None)
+            car['colourSource'] = 'unknown'
+
+
 def load_state():
     if DATA_FILE.exists():
         try:
@@ -99,6 +112,7 @@ def load_state():
                         car.pop('colour', None)
                         car['colourSource'] = 'unknown'
                 migrate_hidden_state(raw)
+                remove_photo_colour_guesses(raw)
                 return {**fresh_state(), **raw}
         except Exception as exc:
             raise RuntimeError(f'Cannot load saved car data from {DATA_FILE}: {exc}') from exc
@@ -106,15 +120,17 @@ def load_state():
 
 state = load_state()
 revision = 0
-job = {'busy': False, 'label': '', 'detail': '', 'stop': False, 'message': '', 'started': None, 'finished': None}
+job = {'busy': False, 'label': '', 'detail': '', 'stop': False, 'message': '',
+       'started': None, 'finished': None, 'searchIds': []}
 
-def store():
+def store(publish=True):
     global revision
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     temporary = DATA_FILE.with_suffix('.tmp')
     temporary.write_text(json.dumps(state, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
     os.replace(temporary, DATA_FILE)
-    revision += 1
+    if publish:
+        revision += 1
 
 def site_name(site):
     return SITES.get(site, site)
@@ -206,7 +222,7 @@ async def photo_hash_worker():
                 url = str(record.get('image') or '') if record else ''
                 if not valid_photo_url(url):
                     continue
-                if record.get('photoHash') is not None and 'photoColourCheckedAt' in record:
+                if record.get('photoHash') is not None:
                     continue
             fingerprint = await download_fingerprint(url)
             async with LOCK:
@@ -215,34 +231,24 @@ async def photo_hash_worker():
                     if fingerprint:
                         current['photoHash'] = fingerprint
                         current['photoStatus'] = 'ready'
-                        paint = fingerprint.get('paint')
-                        if paint and paint.get('colour') and paint.get('confidence', 0) >= .86:
-                            current['photoColour'] = paint['colour']
-                            current['photoColourConfidence'] = paint['confidence']
-                            # Manual edits, labelled paint and title claims outrank
-                            # the heuristic image observation.
-                            if (current.get('colourSource') in (None, 'unknown', 'legacy', 'photo')
-                                    and 'colour' not in (current.get('manualFields') or [])):
-                                current['colour'] = paint['colour']
-                                current['colourSource'] = 'photo'
-                        else:
-                            current.pop('photoColour', None)
-                            current.pop('photoColourConfidence', None)
-                            if current.get('colourSource') == 'photo':
-                                current.pop('colour', None)
-                                current['colourSource'] = 'unknown'
                     else:
                         current.pop('photoHash', None)
                         current['photoStatus'] = 'unavailable'
                     current['photoCheckedAt'] = time.time()
-                    current['photoColourCheckedAt'] = time.time()
-                    store()
+                    # Persist fingerprints, but do not publish a full-state revision
+                    # for every thumbnail (which previously caused constant UI reloads).
+                    store(publish=False)
         except Exception:
             # Photos are optional. Never interrupt scans or saved-car updates.
             pass
         finally:
             PHOTO_PENDING.discard(item_id)
             PHOTO_QUEUE.task_done()
+            if not PHOTO_PENDING and PHOTO_QUEUE.empty():
+                # One client update after background fingerprints are complete.
+                # Fingerprints are still persisted individually for crash safety.
+                async with LOCK:
+                    store()
 
 
 def schedule_photo_hashes(ids=None, limit=240):
@@ -258,7 +264,7 @@ def schedule_photo_hashes(ids=None, limit=240):
         if added >= limit or PHOTO_QUEUE.qsize() >= 300:
             break
         row = state['listings'].get(item_id)
-        if not row or item_id in PHOTO_PENDING or (row.get('photoHash') and 'photoColourCheckedAt' in row):
+        if not row or item_id in PHOTO_PENDING or row.get('photoHash'):
             continue
         url = row.get('image')
         if not valid_photo_url(url):
@@ -447,9 +453,6 @@ async def enrich_saved_listing(item_id):
                 current.pop('photoHash', None)
                 current.pop('photoStatus', None)
                 current.pop('photoCheckedAt', None)
-                current.pop('photoColourCheckedAt', None)
-                current.pop('photoColour', None)
-                current.pop('photoColourConfidence', None)
                 if current.get('colourSource') == 'photo':
                     current.pop('colour', None)
                     current['colourSource'] = 'unknown'
@@ -544,7 +547,7 @@ async def add_saved_listing_from_url(request: Request):
 
 @app.patch('/api/listings/manual/{item_id}')
 async def edit_saved_listing(item_id: str, request: Request):
-    """Edit saved car details; scanner updates cannot overwrite user changes."""
+    """Edit any tracked car; edits persist without adding it to saved cars."""
     body = await payload(request, 30_000)
     try:
         fields = validate_manual_details(body.get("fields"))
@@ -552,8 +555,8 @@ async def edit_saved_listing(item_id: str, request: Request):
         raise HTTPException(400, str(exc))
     async with LOCK:
         record = state["listings"].get(item_id)
-        if not record or not record.get("saved"):
-            raise HTTPException(404, "Saved car not found.")
+        if not record:
+            raise HTTPException(404, "Tracked car not found.")
         apply_manual_details(record, fields, now())
         store()
         response = result()
@@ -718,6 +721,7 @@ async def import_data(request: Request):
         block_during_scan()
         state = {**fresh_state(), **body}
         migrate_hidden_state(state)
+        remove_photo_colour_guesses(state)
         state['options'] = {'pageDepth': int(state.get('options', {}).get('pageDepth', 3)) if str(state.get('options', {}).get('pageDepth', 3)) in ('1', '3', '5', '10', '20') else 3}
         store()
         return result()
@@ -749,9 +753,6 @@ def update_listing(item, stamp):
         old.pop('photoHash', None)
         old.pop('photoStatus', None)
         old.pop('photoCheckedAt', None)
-        old.pop('photoColourCheckedAt', None)
-        old.pop('photoColour', None)
-        old.pop('photoColourConfidence', None)
         if old.get('colourSource') == 'photo':
             old.pop('colour', None)
             old['colourSource'] = 'unknown'
@@ -770,12 +771,12 @@ def update_listing(item, stamp):
     # from enrichment remains more authoritative than a title guess.
     incoming = item.get("colourSource") or "unknown"
     prior = old.get("colourSource") or "legacy"
-    rank = {"legacy": 0, "unknown": 0, "photo": 1, "title": 2, "explicit": 3}
+    rank = {"legacy": 0, "unknown": 0, "photo": 0, "title": 2, "explicit": 3}
     if "colour" not in locked:
         if incoming in ("title", "explicit") and rank.get(incoming, 0) >= rank.get(prior, 0):
             old["colour"] = item["colour"]
             old["colourSource"] = incoming
-        elif incoming == "unknown" and prior in ("legacy", "unknown", "title"):
+        elif incoming == "unknown" and prior in ("legacy", "unknown", "title", "photo"):
             old.pop("colour", None)
             old["colourSource"] = "unknown"
     if price is not None and "price" not in locked:
@@ -788,9 +789,9 @@ async def perform_scan(search_ids):
     browser = None
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True,
+            browser = await asyncio.wait_for(pw.chromium.launch(headless=True,
                 executable_path=os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium'),
-                args=['--disable-dev-shm-usage'])
+                args=['--disable-dev-shm-usage']), timeout=50)
             for search_id in search_ids:
                 if job['stop']:
                     break
@@ -803,8 +804,19 @@ async def perform_scan(search_ids):
                     if job['stop']:
                         break
                     job['detail'] = site_name(link['site'])
-                    outcome = await scan_link(browser, link, int(state.get('options', {}).get('pageDepth', 3)),
-                        lambda: job['stop'], lambda detail: job.update(detail=detail))
+                    depth = int(state.get('options', {}).get('pageDepth', 3))
+                    timeout = max(90, min(360, 60 + 35 * depth))
+                    try:
+                        outcome = await asyncio.wait_for(
+                            scan_link(browser, link, depth,
+                                      lambda: job['stop'],
+                                      lambda detail: job.update(detail=detail)),
+                            timeout=timeout)
+                    except asyncio.TimeoutError:
+                        outcome = {'ok': False,
+                                   'error': f'Source timed out after {timeout}s; other sources will continue.'}
+                    except Exception as exc:
+                        outcome = {'ok': False, 'error': str(exc)[:230]}
                     async with LOCK:
                         snapshot = state['snapshots'].get(link['id'])
                         if not outcome['ok']:
@@ -866,9 +878,14 @@ async def perform_scan(search_ids):
     except Exception as exc:
         job['message'] = 'Refresh failed: ' + str(exc)[:230]
     finally:
-        if browser:
-            await browser.close()
-        job.update(busy=False, label='', detail='', finished=now())
+        # Never leave the job marked as running if Chromium fails to close.
+        try:
+            if browser:
+                await asyncio.wait_for(browser.close(), timeout=15)
+        except Exception:
+            pass
+        finally:
+            job.update(busy=False, label='', detail='', finished=now())
         # Fingerprint public thumbnails after the scan, without slowing down
         # or blocking source extraction. Cached hashes persist on /data.
         schedule_photo_hashes()
@@ -914,7 +931,8 @@ async def begin_refresh(request: Request):
                     raise HTTPException(400, f'Cannot recreate {search["name"]} search: {exc}')
         if migrated:
             store()
-        job.update(busy=True, stop=False, label='Starting headless Chromium…', detail='', message='', started=now(), finished=None)
+        job.update(busy=True, stop=False, label='Starting headless Chromium…',
+                   detail='', message='', started=now(), finished=None, searchIds=search_ids)
         asyncio.create_task(perform_scan(search_ids))
         return {'ok': True, 'job': job}
 
