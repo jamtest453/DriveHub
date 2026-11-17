@@ -908,34 +908,29 @@ function priceMileageMedian(numbers) {
   return sorted.length%2 ? sorted[middle] : (sorted[middle-1]+sorted[middle])/2;
 }
 function priceMileageDepreciation(peers) {
-  // Robust, empirical mileage depreciation using comparable advertised cars:
-  // a positive rate means that a higher-mileage car usually costs less.
-  // Using the median of pairwise price/mileage slopes reduces outlier impact.
-  const slopes=[];
-  const collect=(sameYearOnly)=>{
-    const pairs=[];
-    for(let i=0;i<peers.length;i++)for(let j=i+1;j<peers.length;j++) {
-      const a=peers[i],b=peers[j];
-      if (sameYearOnly && a.year!==b.year) continue;
-      const miles=b.mileage-a.mileage;
-      if (Math.abs(miles)<5000) continue; // Avoid noisy tiny mileage differences.
-      pairs.push((a.price-b.price)/miles);
-    }
-    return pairs;
-  };
-  const sameYear=collect(true);
-  slopes.push(...(sameYear.length>=2 ? sameYear : collect(false)));
-  const spread=Math.max(...peers.map(row=>row.mileage))-
-    Math.min(...peers.map(row=>row.mileage));
-  if (slopes.length<2 || spread<15000) return null;
-  const raw=priceMileageMedian(slopes);
-  // If these adverts do not show a credible negative price/mileage
-  // relationship, don't fabricate a depreciation rate or a bargain badge.
-  if (!Number.isFinite(raw) || raw<=0) return null;
+  // Estimate a mileage adjustment from pairwise comparable asking prices.
+  // If there is not enough evidence for a positive trend, use a deliberately
+  // conservative estimate derived from the cohort's typical asking price,
+  // and disclose that the result has lower confidence.
+  const pairs=[];
+  for(let i=0;i<peers.length;i++)for(let j=i+1;j<peers.length;j++) {
+    const a=peers[i],b=peers[j];
+    if(a.year!==b.year) continue; // Avoid confusing model-year changes with mileage.
+    const miles=b.mileage-a.mileage;
+    if(Math.abs(miles)<5000) continue;
+    pairs.push((a.price-b.price)/miles);
+  }
   const typical=priceMileageMedian(peers.map(row=>row.price));
-  // Protect from wildly distorted rates caused by incomplete trim matching.
-  const maxRate=typical*.10/10000; // At most 10% of typical value per 10k miles.
-  return Math.min(raw,maxRate);
+  const upperBound=typical*.10/10000;
+  const fromListings=priceMileageMedian(pairs);
+  if(Number.isFinite(fromListings) && fromListings>0) {
+    return {rate:Math.min(fromListings,upperBound),estimated:false};
+  }
+  // A sparse or noisy cohort should still support a *tentative* comparison
+  // rather than producing "Not rated" for every valid car. Three percent of
+  // the cohort's median asking price per 10k miles is a modest, explicitly
+  // disclosed heuristic, not a learned depreciation rate.
+  return {rate:typical*.03/10000,estimated:true};
 }
 function priceMileageTier(relativeDifference) {
   // Relative to the median asking price at a common reference mileage.
@@ -961,10 +956,15 @@ function priceMileageRatings(groups) {
   for(const row of rows) {
     const eligible=row.price!==null && row.mileage!==null &&
       !!row.family && Number.isInteger(row.year) && row.year>=1950;
-    const peers=eligible ? (cohorts.get(row.family) || []).filter(peer=>
-      Math.abs(peer.year-row.year)<=1 &&
-      (!row.transmission || !peer.transmission || row.transmission===peer.transmission)) : [];
-    const rate=peers.length>=3 ? priceMileageDepreciation(peers) : null;
+    // Keep strong like-for-like comparisons first, then widen the model-year
+    // window only where the narrower group cannot supply two priced cars.
+    const familyRows=eligible ? (cohorts.get(row.family) || []).filter(peer=>
+      !row.transmission || !peer.transmission || row.transmission===peer.transmission) : [];
+    const closePeers=familyRows.filter(peer=>Math.abs(peer.year-row.year)<=1);
+    const peers=closePeers.length>=2 ? closePeers :
+      familyRows.filter(peer=>Math.abs(peer.year-row.year)<=2);
+    const adjustment=peers.length>=2 ? priceMileageDepreciation(peers) : null;
+    const rate=adjustment?.rate ?? null;
     const baselineMileage=rate!==null ? priceMileageMedian(peers.map(p=>p.mileage)) : null;
     const adjusted=rate!==null ? peers.map(p=>
       p.price+(p.mileage-baselineMileage)*rate) : [];
@@ -982,13 +982,14 @@ function priceMileageRatings(groups) {
       row.mileage===null ? 'Mileage is missing, contradictory or unreliable.' :
       !row.family || !Number.isInteger(row.year) || row.year<1950 ?
         'Model or year is not reliable enough for a comparison.' :
-      peers.length<3 ? 'Need at least 3 comparable cars with price and mileage details.' :
-      rate===null ? 'Not enough evidence of a consistent mileage-related price reduction in these comparable adverts.' :
+      peers.length<2 ? 'No second comparable advert with a usable asking price and mileage. Other adverts may lack trustworthy data.' :
       (Math.abs(relativeDifference)*100).toFixed(1)+'% '+
       (relativeDifference<0?'below':relativeDifference>0?'above':'equal to')+
       ' the mileage-adjusted median of '+peers.length+' comparable cars. '+
       'Adjusted to '+Math.round(baselineMileage).toLocaleString('en-GB')+' miles, '+
-      'using '+currency(rate*10000)+' per 10,000 miles from these adverts. '+
+      'using '+currency(rate*10000)+' per 10,000 miles. '+
+      (adjustment.estimated ? 'Approximate mileage allowance (3% of median asking price per 10,000 miles); few reliable same-year observations. ' :
+        'Mileage rate estimated from same-year comparable adverts. ')+
       'Asking prices only; not a verified market valuation.';
     rated.set(row.id,{tier,label:labels[tier],
       score:relativeDifference===null?null:-relativeDifference,
@@ -1011,6 +1012,21 @@ function comparePriceMileageGroups(a,b,ratings) {
   const priceA=left?.price ?? Infinity,priceB=right?.price ?? Infinity;
   if(priceA!==priceB) return priceA-priceB;
   return (left?.mileage ?? Infinity)-(right?.mileage ?? Infinity);
+}
+
+function listingUpdatedAt(car) {
+  // A refresh of an unchanged advert is not a meaningful update. Use the
+  // first discovery or a *subsequent* recorded price-history change.
+  const first=Date.parse(car.firstSeen || '') || 0;
+  const history=Array.isArray(car.priceHistory) ? car.priceHistory : [];
+  const changed=history.slice(1).reduce((latest,row)=>{
+    const date=Date.parse(row?.at || '') || 0;
+    return Math.max(latest,date);
+  },0);
+  return Math.max(first,changed);
+}
+function groupUpdatedAt(group) {
+  return Math.max(0,...group.map(listingUpdatedAt));
 }
 
 function renderResults() {
@@ -1036,6 +1052,10 @@ function renderResults() {
     if (sort==='priceMileage') {
       const value=comparePriceMileageGroups(a,b,valueRatings);
       if (value) return value;
+    }
+    if (sort==='recentlyUpdated') {
+      const updated=groupUpdatedAt(b)-groupUpdatedAt(a);
+      if (updated) return updated;
     }
     if (sort==='preferred' && search) {
       const difference = searchPreferredScore(b, search) - searchPreferredScore(a, search);
@@ -1063,6 +1083,7 @@ function renderResults() {
     (sort === 'preferred' && search && keywordTerms(preferredKeywords(search)).length ?
       ' · preferred keyword matches first' : '') +
     (sort === 'priceMileage' ? ' · asking prices adjusted for mileage using comparable adverts' : '') +
+    (sort === 'recentlyUpdated' ? ' · newest adverts and price changes first' : '') +
     (wantsDistanceCoordinates() ? (distanceLookupBusy ? ' · locating adverts…' :
       ' · straight-line distance from High Lane (unknown locations last)') : '');
   $('listModeButton').classList.toggle('active', resultsLayout === 'list');
