@@ -12,7 +12,7 @@ const config: CapacitorConfig={
   plugins:{
     CapacitorUpdater:{
       autoUpdate:'atBackground',
-      version:'142.29.0',
+      version:'142.30.0',
       updateUrl:`${appOrigin}/api/app/update?channel=${otaChannel}`, 
       statsUrl:'',
       appReadyTimeout:10000,
