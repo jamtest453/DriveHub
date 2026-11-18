@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as datadir:
             assert js.status_code==200 and "fetch('/car-search-app' + url" in js.text
             assert "'/car-search-app/api/facebook/connection/preview'" in js.text
             auth=client.get('/car-search-app/api/auth').json()
-            assert auth=={'authenticated':False,'passwordRequired':True}
+            assert auth['authenticated'] is False and auth['passwordRequired'] is True and auth['mode']=='password'
             assert client.get('/car-search-app/api/state').status_code==401
             login=client.post('/car-search-app/api/login',json={'password':'test-long-secure-password'},headers={'origin':base})
             assert login.status_code==200,login.text

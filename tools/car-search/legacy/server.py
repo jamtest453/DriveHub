@@ -25,6 +25,8 @@ from src.writeoff import is_visible_writeoff
 from src.colour import listing_exterior_colour, title_exterior_colour
 from src.detail_enrichment import enrich_listing
 from src.photo_hash import download_fingerprint, valid_photo_url
+from src import workspaces
+from src.workspaces import CURRENT, GoogleDriveStore, GoogleError, Workspace, new_job, plain
 from src.manual_cars import (
     listing_url, validate_manual_details, apply_manual_details, SITE_NAMES as MANUAL_SITE_NAMES
 )
@@ -33,10 +35,20 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get('DATA_DIR', ROOT / 'data'))
 DATA_FILE = DATA_DIR / 'car-search-hub.json'
 PASSWORD = os.environ.get('APP_PASSWORD', '')
-if os.environ.get('ENVIRONMENT') == 'production' and (not PASSWORD or PASSWORD == 'replace-with-a-long-unique-password'):
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_LOGIN_CLIENT_ID', '').strip()
+# With a Google client ID, each person signs in with Google and their data is
+# kept in their own Google Drive. Without one, the original shared password
+# and shared data file are used.
+AUTH_MODE = 'google' if GOOGLE_CLIENT_ID else 'password'
+# Only these Google accounts may sign in. An empty list lets nobody in, because
+# every person's scans share this server and its Facebook connection.
+ALLOWED_EMAILS = os.environ.get('ALLOWED_EMAILS', '').replace(';', ',').split(',')
+if (os.environ.get('ENVIRONMENT') == 'production' and AUTH_MODE == 'password'
+        and (not PASSWORD or PASSWORD == 'replace-with-a-long-unique-password')):
     raise RuntimeError('Set a strong APP_PASSWORD before running the site publicly.')
 SIGNING_KEY = os.environ.get('AUTH_SECRET', '').encode() or secrets.token_bytes(32)
-LOCK = asyncio.Lock()
+SCAN_GATE = asyncio.Lock()
+LOCK = workspaces.LOCK if AUTH_MODE == 'google' else asyncio.Lock()
 LOCATION_RESOLVER = LocationResolver()
 ENRICH_LOCK = asyncio.Semaphore(2)
 ENRICH_TASKS = set()
@@ -93,71 +105,128 @@ def remove_photo_colour_guesses(raw):
             car['colourSource'] = 'unknown'
 
 
+def prepare_state(raw):
+    """Bring saved data (file, Google Drive or backup) up to the current format."""
+    if not (isinstance(raw, dict) and raw.get('version') == 1 and isinstance(raw.get('searches'), list)
+            and isinstance(raw.get('listings'), dict)):
+        raise ValueError('Not a valid Car Search Hub data file.')
+    # Older versions guessed car colour from seat, wheel and
+    # trim text. Recheck only safe title paint terms when the
+    # source of the colour was never recorded.
+    for car in raw['listings'].values():
+        if not isinstance(car, dict) or car.get('colourSource'):
+            continue
+        safe_colour = title_exterior_colour(car.get('title'))
+        if safe_colour:
+            car['colour'] = safe_colour
+            car['colourSource'] = 'title'
+        else:
+            car.pop('colour', None)
+            car['colourSource'] = 'unknown'
+    migrate_hidden_state(raw)
+    remove_photo_colour_guesses(raw)
+    merged = {**fresh_state(), **raw}
+    merged['options'] = clean_options(merged.get('options'))
+    return merged
+
+
 def load_state():
     if DATA_FILE.exists():
         try:
             raw = json.loads(DATA_FILE.read_text())
             if raw.get('version') == 1 and isinstance(raw.get('searches'), list) and isinstance(raw.get('listings'), dict):
-                # Older versions guessed car colour from seat, wheel and
-                # trim text. Recheck only safe title paint terms when the
-                # source of the colour was never recorded.
-                for car in raw['listings'].values():
-                    if not isinstance(car, dict) or car.get('colourSource'):
-                        continue
-                    safe_colour = title_exterior_colour(car.get('title'))
-                    if safe_colour:
-                        car['colour'] = safe_colour
-                        car['colourSource'] = 'title'
-                    else:
-                        car.pop('colour', None)
-                        car['colourSource'] = 'unknown'
-                migrate_hidden_state(raw)
-                remove_photo_colour_guesses(raw)
-                return {**fresh_state(), **raw}
+                return prepare_state(raw)
         except Exception as exc:
             raise RuntimeError(f'Cannot load saved car data from {DATA_FILE}: {exc}') from exc
     return fresh_state()
 
-state = load_state()
-revision = 0
-job = {'busy': False, 'label': '', 'detail': '', 'stop': False, 'message': '',
-       'started': None, 'finished': None, 'searchIds': []}
+class SharedWorkspace(Workspace):
+    """Password mode: the original single data set held in this module."""
+    state = property(lambda self: globals()['state'],
+                     lambda self, value: globals().__setitem__('state', value))
+    job = property(lambda self: globals()['job'], lambda self, value: None)
+    lock = property(lambda self: LOCK, lambda self, value: None)
+
+
+if AUTH_MODE == 'google':
+    state, job = workspaces.state, workspaces.job
+    SHARED_WORKSPACE = None
+else:
+    state, job = load_state(), new_job()
+    SHARED_WORKSPACE = SharedWorkspace('shared', state)
+
+
+def current_workspace():
+    return CURRENT.get() or SHARED_WORKSPACE or workspaces.current()
+GOOGLE_STORE = GoogleDriveStore(
+    GOOGLE_CLIENT_ID, ALLOWED_EMAILS, fresh_state, prepare_state,
+    legacy_owner=os.environ.get('LEGACY_DATA_OWNER', ''), legacy_file=DATA_FILE,
+) if AUTH_MODE == 'google' else None
+
 
 def store(publish=True):
-    global revision
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    temporary = DATA_FILE.with_suffix('.tmp')
-    temporary.write_text(json.dumps(state, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
-    os.replace(temporary, DATA_FILE)
+    workspace = current_workspace()
+    if AUTH_MODE == 'google':
+        GOOGLE_STORE.schedule_flush(workspace)
+    else:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        temporary = DATA_FILE.with_suffix('.tmp')
+        temporary.write_text(json.dumps(workspace.state, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        os.replace(temporary, DATA_FILE)
     if publish:
-        revision += 1
+        workspace.revision += 1
 
 def site_name(site):
     return SITES.get(site, site)
 
-def cookie_value():
+def cookie_value(subject=''):
     expires = str(int(time.time()) + SESSION_LIFETIME)
-    signature = hmac.new(SIGNING_KEY, expires.encode(), sha256).hexdigest()
-    return expires + '.' + signature
+    message = (subject + '|' + expires) if subject else expires
+    signature = hmac.new(SIGNING_KEY, message.encode(), sha256).hexdigest()
+    return message + '.' + signature
 
-def is_authenticated(request):
-    if not PASSWORD:
-        return True
+def session_subject(request):
+    """The signed-in subject: '' for the shared password session, the
+    Google account id in Google mode, or None when not signed in."""
     value = request.cookies.get('carhub_session', '')
     try:
-        expiry, signature = value.split('.', 1)
-        wanted = hmac.new(SIGNING_KEY, expiry.encode(), sha256).hexdigest()
-        return int(expiry) > time.time() and hmac.compare_digest(signature, wanted)
+        message, signature = value.rsplit('.', 1)
+        wanted = hmac.new(SIGNING_KEY, message.encode(), sha256).hexdigest()
+        subject, _, expiry = message.rpartition('|')
+        if int(expiry) > time.time() and hmac.compare_digest(signature, wanted):
+            return subject
     except (ValueError, TypeError):
-        return False
+        pass
+    return None
+
+def is_authenticated(request):
+    if AUTH_MODE == 'google':
+        subject = session_subject(request)
+        workspace = GOOGLE_STORE.find(subject) if subject else None
+        return bool(workspace and workspace.token_valid())
+    if not PASSWORD:
+        return True
+    return session_subject(request) == ''
+
+def request_workspace(request):
+    if AUTH_MODE == 'password':
+        return SHARED_WORKSPACE
+    subject = session_subject(request)
+    return GOOGLE_STORE.find(subject) if subject else None
+
+def secure_request(request):
+    return request.url.scheme == 'https' or request.headers.get('x-forwarded-proto') == 'https'
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 @app.middleware('http')
 async def gate(request: Request, call_next):
     path = request.url.path
-    if path.startswith('/api/') and path not in ('/api/login', '/api/auth') and not is_authenticated(request):
-        return JSONResponse({'error': 'Sign in to continue.'}, status_code=401)
+    public = path in ('/api/login', '/api/auth', '/api/google/session', '/api/logout')
+    if path.startswith('/api/') and not public:
+        if not is_authenticated(request):
+            return JSONResponse({'error': 'Sign in to continue.', 'reauth': AUTH_MODE}, status_code=401)
+        CURRENT.set(request_workspace(request))
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         origin = request.headers.get('origin', '')
         if origin and urlsplit(origin).netloc != request.headers.get('host'):
@@ -177,7 +246,9 @@ async def payload(request, limit=8_000_000):
     return result
 
 def result():
-    return {'state': state, 'revision': revision, 'job': job}
+    workspace = current_workspace()
+    return {'state': workspace.state, 'revision': workspace.revision, 'job': workspace.job,
+            'saveError': workspace.save_error}
 
 def block_during_scan():
     if job['busy']:
@@ -185,10 +256,30 @@ def block_during_scan():
 
 @app.get('/api/auth')
 async def auth_status(request: Request):
-    return {'authenticated': is_authenticated(request), 'passwordRequired': bool(PASSWORD)}
+    workspace = request_workspace(request) if AUTH_MODE == 'google' else None
+    return {'authenticated': is_authenticated(request), 'mode': AUTH_MODE,
+            'passwordRequired': AUTH_MODE == 'password' and bool(PASSWORD),
+            'googleClientId': GOOGLE_CLIENT_ID or None,
+            'email': workspace.email if workspace else None}
+
+
+@app.post('/api/google/session')
+async def google_session(request: Request, response: Response):
+    if AUTH_MODE != 'google':
+        raise HTTPException(404, 'Google sign-in is not enabled.')
+    body = await payload(request, 8192)
+    try:
+        workspace = await GOOGLE_STORE.sign_in(body.get('accessToken'))
+    except GoogleError as exc:
+        raise HTTPException(exc.status, str(exc))
+    response.set_cookie('carhub_session', cookie_value(workspace.key), httponly=True,
+        max_age=SESSION_LIFETIME, secure=secure_request(request), samesite='strict', path='/')
+    return {'ok': True, 'email': workspace.email}
 
 @app.post('/api/login')
 async def login(request: Request, response: Response):
+    if AUTH_MODE != 'password':
+        raise HTTPException(400, 'Sign in with Google.')
     body = await payload(request, 4096)
     key = (request.client.host if request.client else 'unknown')
     failures = [x for x in LOGIN_ATTEMPTS.get(key, []) if time.time() - x < 900]
@@ -200,18 +291,24 @@ async def login(request: Request, response: Response):
         raise HTTPException(401, 'Incorrect password.')
     LOGIN_ATTEMPTS.pop(key, None)
     response.set_cookie('carhub_session', cookie_value(), httponly=True, max_age=SESSION_LIFETIME,
-        secure=(request.url.scheme == 'https' or request.headers.get('x-forwarded-proto') == 'https'), samesite='strict', path='/')
+        secure=secure_request(request), samesite='strict', path='/')
     return {'ok': True}
 
 @app.post('/api/logout')
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    if AUTH_MODE == 'google':
+        subject = session_subject(request)
+        if subject:
+            await GOOGLE_STORE.sign_out(subject)
     response.delete_cookie('carhub_session', path='/')
     return {'ok': True}
 
 async def photo_hash_worker():
     """Resolve image hashes outside the state lock; keep the UI responsive."""
     while not PHOTO_QUEUE.empty():
-        item_id = await PHOTO_QUEUE.get()
+        entry = await PHOTO_QUEUE.get()
+        workspace, item_id = entry if isinstance(entry, tuple) else (current_workspace(), entry)
+        CURRENT.set(workspace)
         try:
             # Searches and Facebook authentication take priority over
             # optional image hashing; queued work resumes afterwards.
@@ -242,9 +339,10 @@ async def photo_hash_worker():
             # Photos are optional. Never interrupt scans or saved-car updates.
             pass
         finally:
+            PHOTO_PENDING.discard((workspace.key, item_id))
             PHOTO_PENDING.discard(item_id)
             PHOTO_QUEUE.task_done()
-            if not PHOTO_PENDING and PHOTO_QUEUE.empty():
+            if not any(isinstance(key, tuple) and key[0] == workspace.key for key in PHOTO_PENDING):
                 # One client update after background fingerprints are complete.
                 # Fingerprints are still persisted individually for crash safety.
                 async with LOCK:
@@ -264,7 +362,7 @@ def schedule_photo_hashes(ids=None, limit=240):
         if added >= limit or PHOTO_QUEUE.qsize() >= 300:
             break
         row = state['listings'].get(item_id)
-        if not row or item_id in PHOTO_PENDING or row.get('photoHash'):
+        if not row or (current_workspace().key, item_id) in PHOTO_PENDING or row.get('photoHash'):
             continue
         url = row.get('image')
         if not valid_photo_url(url):
@@ -272,8 +370,8 @@ def schedule_photo_hashes(ids=None, limit=240):
         if (row.get('photoStatus') == 'unavailable' and
                 time.time()-float(row.get('photoCheckedAt') or 0) < 86400):
             continue
-        PHOTO_PENDING.add(item_id)
-        PHOTO_QUEUE.put_nowait(item_id)
+        PHOTO_PENDING.add((current_workspace().key, item_id))
+        PHOTO_QUEUE.put_nowait((current_workspace(), item_id))
         added += 1
     # A worker drains the queue rather than spawning a task per photo.
     while len(PHOTO_WORKERS) < PHOTO_WORKER_LIMIT and not PHOTO_QUEUE.empty():
@@ -309,7 +407,8 @@ async def map_locations(request: Request):
 
 @app.get('/api/status')
 async def get_status():
-    return {'revision': revision, 'job': job}
+    workspace = current_workspace()
+    return {'revision': workspace.revision, 'job': workspace.job, 'saveError': workspace.save_error}
 
 @app.post('/api/searches/parse-url')
 async def parse_search_url_request(request: Request):
@@ -752,12 +851,11 @@ async def change_options(request: Request):
 
 @app.get('/api/export')
 async def export_data():
-    return Response(json.dumps(state, indent=2, ensure_ascii=False), media_type='application/json',
+    return Response(json.dumps(plain(state), indent=2, ensure_ascii=False), media_type='application/json',
         headers={'Content-Disposition': 'attachment; filename="car-search-hub-backup.json"'})
 
 @app.post('/api/import')
 async def import_data(request: Request):
-    global state
     body = await payload(request)
     if body.get('version') != 1 or not isinstance(body.get('searches'), list) or not isinstance(body.get('listings'), dict) or not isinstance(body.get('snapshots'), dict):
         raise HTTPException(400, 'Not a valid Car Search Hub v1/v2 backup.')
@@ -768,10 +866,10 @@ async def import_data(request: Request):
             raise HTTPException(400, 'Backup contains invalid search URLs.')
     async with LOCK:
         block_during_scan()
-        state = {**fresh_state(), **body}
-        migrate_hidden_state(state)
-        remove_photo_colour_guesses(state)
-        state['options'] = clean_options(state.get('options'))
+        try:
+            current_workspace().state = prepare_state(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
         store()
         return result()
 
@@ -837,6 +935,11 @@ def update_listing(item, stamp):
 async def perform_scan(search_ids):
     browser = None
     try:
+      if SCAN_GATE.locked():
+          job['label'] = 'Waiting for another search to finish…'
+      async with SCAN_GATE:
+        if job['stop']:
+            return
         async with async_playwright() as pw:
             browser = await asyncio.wait_for(pw.chromium.launch(headless=True,
                 executable_path=os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium'),
@@ -983,12 +1086,12 @@ async def begin_refresh(request: Request):
         job.update(busy=True, stop=False, label='Starting headless Chromium…',
                    detail='', message='', started=now(), finished=None, searchIds=search_ids)
         asyncio.create_task(perform_scan(search_ids))
-        return {'ok': True, 'job': job}
+        return {'ok': True, 'job': plain(job)}
 
 @app.post('/api/refresh/stop')
 async def stop_refresh():
     job['stop'] = True
-    return {'ok': True, 'job': job}
+    return {'ok': True, 'job': plain(job)}
 
 @app.get('/api/facebook/connection/status')
 async def facebook_connection_status():
