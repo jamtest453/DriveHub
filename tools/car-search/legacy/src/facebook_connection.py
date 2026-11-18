@@ -13,6 +13,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout, Error as PlaywrightError
 
 from .scanner import facebook_context, facebook_state_path
+from . import facebook_profile
 
 CHECK_URL = "https://www.facebook.com/marketplace/search/?query=BMW%20M2"
 CHALLENGE_TERMS = (
@@ -25,7 +26,7 @@ BAD_URL_PARTS = ("/login", "/checkpoint", "/recover", "/two_step", "/two_factor"
 
 
 def managed_state_path():
-    return Path(os.environ.get("DATA_DIR", "/data")) / "facebook-session.json"
+    return facebook_profile.active().managed_path()
 
 
 async def marketplace_probe(context):
@@ -194,7 +195,10 @@ class FacebookConnection:
             self.last_outcome = ("Previous Railway Facebook cookies removed. New sign-in "
                                  "will use the current Railway environment variables.")
             self.message = ("Facebook session cleared. Ensure FACEBOOK_PASSWORD is correct "
-                            "in Railway, then connect once. Other saved data is untouched.")
+                            "in Railway, then connect once. Other saved data is untouched."
+                            if not facebook_profile.active().personal else
+                            "Facebook session cleared. Check your Facebook login in Settings, "
+                            "then connect once. Other saved data is untouched.")
             self.code_attempts = 0
             self.interaction_count = 0
             return self.status()
@@ -214,6 +218,9 @@ class FacebookConnection:
             "incorrect email or password", "incorrect phone number or password",
         )
         if any(marker in body for marker in incorrect):
+            if facebook_profile.active().personal:
+                return ("invalid_credentials", "Facebook says your login details are incorrect. "
+                        "Update your Facebook password in Car Search Settings and connect again.")
             return ("invalid_credentials", "Facebook says the Railway login details are incorrect. "
                     "Update FACEBOOK_PASSWORD in Railway Variables, redeploy, and reset the server session.")
         if "account has been disabled" in body or "your account has been suspended" in body:
@@ -238,6 +245,7 @@ class FacebookConnection:
         finally:
             if temp.is_file():
                 temp.unlink()
+        facebook_profile.active().saved()
         self.state = "connected"
         self.verified_at = time.monotonic()
         self.message = "Verified: Railway's browser can access Facebook Marketplace."
@@ -284,11 +292,12 @@ class FacebookConnection:
                 # by the app's retry limit, rather than stopping prematurely.
                 initial_probe = detail
 
-                email = os.environ.get("FACEBOOK_EMAIL", "").strip()
-                password = os.environ.get("FACEBOOK_PASSWORD", "")
+                email, password = facebook_profile.active().credentials()
                 if not email or not password:
                     self.state = "needs_credentials"
-                    self.message = "Add FACEBOOK_EMAIL (a phone number is fine) and FACEBOOK_PASSWORD to Railway Variables."
+                    self.message = ("Add your Facebook email or phone number and password in Car Search Settings."
+                                    if facebook_profile.active().personal else
+                                    "Add FACEBOOK_EMAIL (a phone number is fine) and FACEBOOK_PASSWORD to Railway Variables.")
                     await self._close()
                     return self.status()
                 if self.retry_seconds():

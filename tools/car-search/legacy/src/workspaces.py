@@ -17,12 +17,20 @@ import asyncio
 import contextvars
 import json
 import os
+import tempfile
 import time
 from collections.abc import MutableMapping
+from hashlib import sha256
+from pathlib import Path
 
 import httpx
 
+from .facebook_profile import FacebookProfile
+
 DRIVE_FILE_NAME = 'car-search-hub.json'
+# Kept apart from the car data so Facebook login details never appear in
+# backups/exports or in anything sent to the browser.
+FACEBOOK_FILE_NAME = 'car-search-facebook.json'
 DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 FLUSH_DELAY = 3.0
 IDLE_EVICT_SECONDS = 12 * 3600
@@ -51,6 +59,9 @@ class Workspace:
         self.flush_task = None
         self.last_used = time.time()
         self.save_error = ''
+        self.facebook_profile = None
+        self.facebook_connection = None
+        self.facebook_file_id = None
 
     def token_valid(self):
         return bool(self.token) and self.token_expiry - TOKEN_MARGIN > time.time()
@@ -135,6 +146,10 @@ class GoogleDriveStore:
         self.http = http
         self.workspaces = {}
         self.loading = {}
+        # Facebook browser sessions are only on this server while the person
+        # is using Car Search; the lasting copy is in their Google Drive.
+        self.session_dir = Path(tempfile.mkdtemp(prefix='car-search-facebook-'))
+        os.chmod(self.session_dir, 0o700)
 
     def _client(self):
         if self.http is None:
@@ -176,10 +191,10 @@ class GoogleDriveStore:
     def _headers(self, token):
         return {'Authorization': 'Bearer ' + token}
 
-    async def _find_file(self, token):
+    async def _find_file(self, token, name=DRIVE_FILE_NAME):
         response = await self._client().get(
             'https://www.googleapis.com/drive/v3/files',
-            params={'spaces': 'appDataFolder', 'q': f"name='{DRIVE_FILE_NAME}' and trashed=false",
+            params={'spaces': 'appDataFolder', 'q': f"name='{name}' and trashed=false",
                     'fields': 'files(id,modifiedTime)', 'orderBy': 'modifiedTime desc', 'pageSize': '1'},
             headers=self._headers(token))
         if response.status_code == 401:
@@ -199,18 +214,21 @@ class GoogleDriveStore:
 
     async def _upload(self, workspace):
         body = json.dumps(workspace.state, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        workspace.drive_file_id = await self._put_file(
+            workspace, DRIVE_FILE_NAME, workspace.drive_file_id, body)
+
+    async def _put_file(self, workspace, name, file_id, body):
         headers = self._headers(workspace.token)
-        if workspace.drive_file_id:
+        if file_id:
             response = await self._client().patch(
-                f'https://www.googleapis.com/upload/drive/v3/files/{workspace.drive_file_id}',
+                f'https://www.googleapis.com/upload/drive/v3/files/{file_id}',
                 params={'uploadType': 'media'}, content=body,
                 headers={**headers, 'Content-Type': 'application/json'})
             if response.status_code == 404:
-                workspace.drive_file_id = None
-                return await self._upload(workspace)
+                return await self._put_file(workspace, name, None, body)
         else:
             boundary = 'carsearch' + os.urandom(8).hex()
-            metadata = json.dumps({'name': DRIVE_FILE_NAME, 'parents': ['appDataFolder'],
+            metadata = json.dumps({'name': name, 'parents': ['appDataFolder'],
                                    'mimeType': 'application/json'})
             multipart = (f'--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'
                          f'{metadata}\r\n--{boundary}\r\nContent-Type: application/json\r\n\r\n'
@@ -223,8 +241,74 @@ class GoogleDriveStore:
             workspace.token_expiry = 0
             raise GoogleError('Google sign-in has expired. Sign in again.')
         response.raise_for_status()
-        if not workspace.drive_file_id:
-            workspace.drive_file_id = response.json().get('id')
+        return file_id or response.json().get('id')
+
+    # ----- Each person's own Facebook login -----
+
+    def _facebook_path(self, workspace):
+        return self.session_dir / (sha256(workspace.key.encode()).hexdigest()[:32] + '.json')
+
+    def _attach_facebook(self, workspace, saved):
+        saved = saved if isinstance(saved, dict) else {}
+        path = self._facebook_path(workspace)
+        session = saved.get('session')
+        if isinstance(session, dict):
+            path.write_text(json.dumps(session), encoding='utf-8')
+            os.chmod(path, 0o600)
+        elif path.exists():
+            path.unlink()
+        workspace.facebook_profile = FacebookProfile(
+            path, str(saved.get('email') or ''), str(saved.get('password') or ''),
+            on_saved=lambda: asyncio.ensure_future(self.save_facebook(workspace)))
+
+    async def save_facebook(self, workspace):
+        """Save the person's Facebook login and browser session to their Drive."""
+        profile = workspace.facebook_profile
+        if not profile or not workspace.token_valid():
+            return False
+        session = None
+        path = profile.managed_path()
+        if path.is_file():
+            try:
+                session = json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                session = None
+        body = json.dumps({'email': profile.email, 'password': profile.password, 'session': session}).encode()
+        try:
+            workspace.facebook_file_id = await self._put_file(
+                workspace, FACEBOOK_FILE_NAME, workspace.facebook_file_id, body)
+            return True
+        except (GoogleError, httpx.HTTPError):
+            return False
+
+    async def set_facebook_login(self, workspace, email, password, keep_password):
+        profile = workspace.facebook_profile
+        changed_account = email.strip().lower() != profile.email.strip().lower()
+        profile.email = email.strip()
+        if not keep_password:
+            profile.password = password
+        if changed_account or not keep_password:
+            # A different account (or password) needs a fresh browser sign-in.
+            path = profile.managed_path()
+            if path.exists():
+                path.unlink()
+            profile.last_failed_attempt = 0.0
+        if not await self.save_facebook(workspace):
+            raise GoogleError('Could not save your Facebook login to Google Drive. Try again.', 503)
+
+    async def clear_facebook_login(self, workspace):
+        profile = workspace.facebook_profile
+        profile.email = profile.password = ''
+        path = profile.managed_path()
+        if path.exists():
+            path.unlink()
+        if not await self.save_facebook(workspace):
+            raise GoogleError('Could not update your Google Drive. Try again.', 503)
+
+    def _forget(self, workspace):
+        path = self._facebook_path(workspace)
+        if path.exists():
+            path.unlink()
 
     def _legacy_state(self, email):
         if not (self.legacy_owner and email == self.legacy_owner and self.legacy_file
@@ -262,6 +346,8 @@ class GoogleDriveStore:
         try:
             file_id = await self._find_file(token)
             raw = await self._download(token, file_id) if file_id else None
+            facebook_id = await self._find_file(token, FACEBOOK_FILE_NAME)
+            facebook = await self._download(token, facebook_id) if facebook_id else None
         except httpx.HTTPError:
             raise GoogleError('Could not load your Car Search data from Google Drive. Try again.', 503)
         imported = False
@@ -271,6 +357,8 @@ class GoogleDriveStore:
         workspace = Workspace(info['sub'], self.prepare_state(raw) if raw else self.fresh_state(),
                               info['email'])
         workspace.drive_file_id = file_id
+        workspace.facebook_file_id = facebook_id
+        self._attach_facebook(workspace, facebook)
         workspace.token, workspace.token_expiry = token, info['expires']
         self.workspaces[info['sub']] = workspace
         if imported:
@@ -318,6 +406,7 @@ class GoogleDriveStore:
         await self.flush(workspace)
         if not workspace.job['busy'] and not workspace.dirty:
             self.workspaces.pop(sub, None)
+            self._forget(workspace)
         else:
             workspace.token = ''
 
@@ -326,3 +415,4 @@ class GoogleDriveStore:
         for sub, workspace in list(self.workspaces.items()):
             if workspace.last_used < cutoff and not workspace.dirty and not workspace.job['busy']:
                 self.workspaces.pop(sub, None)
+                self._forget(workspace)

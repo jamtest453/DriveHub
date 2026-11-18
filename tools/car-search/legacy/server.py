@@ -19,7 +19,8 @@ from playwright.async_api import async_playwright
 from src.scanner import SITES, clean_url, site_for, scan_link
 from src.query_builder import validate_filters, generate_links, apply_local_filters, SOURCES
 from src.search_url_import import parse_search_url
-from src.facebook_connection import connection as facebook_connection
+from src.facebook_connection import FacebookConnection, connection as facebook_connection
+from src import facebook_profile
 from src.location_map import LocationResolver
 from src.writeoff import is_visible_writeoff
 from src.colour import listing_exterior_colour, title_exterior_colour
@@ -226,7 +227,10 @@ async def gate(request: Request, call_next):
     if path.startswith('/api/') and not public:
         if not is_authenticated(request):
             return JSONResponse({'error': 'Sign in to continue.', 'reauth': AUTH_MODE}, status_code=401)
-        CURRENT.set(request_workspace(request))
+        workspace = request_workspace(request)
+        CURRENT.set(workspace)
+        if AUTH_MODE == 'google':
+            facebook_profile.PROFILE.set(workspace.facebook_profile)
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         origin = request.headers.get('origin', '')
         if origin and urlsplit(origin).netloc != request.headers.get('host'):
@@ -1093,30 +1097,89 @@ async def stop_refresh():
     job['stop'] = True
     return {'ok': True, 'job': plain(job)}
 
+def active_facebook_connection():
+    """The Marketplace browser connection for whoever is signed in."""
+    if AUTH_MODE != 'google':
+        return facebook_connection
+    workspace = current_workspace()
+    if workspace.facebook_connection is None:
+        workspace.facebook_connection = FacebookConnection()
+    return workspace.facebook_connection
+
+
+@app.get('/api/facebook/account')
+async def facebook_account():
+    if AUTH_MODE != 'google':
+        return {'personal': False}
+    profile = current_workspace().facebook_profile
+    # Never send the password back to the browser.
+    return {'personal': True, 'email': profile.email, 'hasPassword': bool(profile.password)}
+
+
+@app.put('/api/facebook/account')
+async def save_facebook_account(request: Request):
+    if AUTH_MODE != 'google':
+        raise HTTPException(400, 'Facebook login is set in Railway Variables.')
+    body = await payload(request, 4000)
+    email = body.get('email')
+    password = body.get('password')
+    if not isinstance(email, str) or not 3 <= len(email.strip()) <= 200:
+        raise HTTPException(400, 'Enter the email address or phone number you use for Facebook.')
+    keep = password in (None, '')
+    if not keep and (not isinstance(password, str) or len(password) > 200):
+        raise HTTPException(400, 'Enter your Facebook password.')
+    workspace = current_workspace()
+    if keep and not workspace.facebook_profile.password:
+        raise HTTPException(400, 'Enter your Facebook password.')
+    if job['busy']:
+        raise HTTPException(409, 'Wait for the current refresh to finish.')
+    try:
+        await GOOGLE_STORE.set_facebook_login(workspace, email, password or '', keep)
+    except GoogleError as exc:
+        raise HTTPException(exc.status, str(exc))
+    workspace.facebook_connection = None
+    return await facebook_account()
+
+
+@app.delete('/api/facebook/account')
+async def remove_facebook_account():
+    if AUTH_MODE != 'google':
+        raise HTTPException(400, 'Facebook login is set in Railway Variables.')
+    if job['busy']:
+        raise HTTPException(409, 'Wait for the current refresh to finish.')
+    workspace = current_workspace()
+    try:
+        await GOOGLE_STORE.clear_facebook_login(workspace)
+    except GoogleError as exc:
+        raise HTTPException(exc.status, str(exc))
+    workspace.facebook_connection = None
+    return await facebook_account()
+
+
 @app.get('/api/facebook/connection/status')
 async def facebook_connection_status():
-    return await facebook_connection.check_saved_status()
+    return await active_facebook_connection().check_saved_status()
 
 
 @app.post('/api/facebook/connection/connect')
 async def facebook_connection_connect():
     if job['busy']:
         raise HTTPException(409, 'Finish the current refresh before connecting Facebook.')
-    return await facebook_connection.start()
+    return await active_facebook_connection().start()
 
 
 @app.post('/api/facebook/connection/reset')
 async def facebook_connection_reset():
     if job['busy']:
         raise HTTPException(409, 'Finish the current refresh before resetting Facebook.')
-    return await facebook_connection.reset()
+    return await active_facebook_connection().reset()
 
 
 @app.post('/api/facebook/connection/recheck')
 async def facebook_connection_recheck():
     if job['busy']:
         raise HTTPException(409, 'Finish the current refresh before verifying Facebook.')
-    return await facebook_connection.recheck()
+    return await active_facebook_connection().recheck()
 
 
 @app.post('/api/facebook/connection/code')
@@ -1124,7 +1187,7 @@ async def facebook_connection_code(request: Request):
     if job['busy']:
         raise HTTPException(409, 'Finish the current refresh before verifying Facebook.')
     body = await payload(request, 1000)
-    return await facebook_connection.code(body.get('code'))
+    return await active_facebook_connection().code(body.get('code'))
 
 
 @app.post('/api/facebook/connection/interact')
@@ -1133,7 +1196,7 @@ async def facebook_connection_interact(request: Request):
         raise HTTPException(409, 'Finish the current scan before completing Facebook verification.')
     body = await payload(request, 1024)
     try:
-        return await facebook_connection.interact(
+        return await active_facebook_connection().interact(
             body.get('kind'), body.get('x'), body.get('y'), body.get('text'))
     except ValueError as exc:
         raise HTTPException(409, str(exc))
@@ -1142,7 +1205,7 @@ async def facebook_connection_interact(request: Request):
 @app.get('/api/facebook/connection/preview')
 async def facebook_connection_preview():
     try:
-        image = await facebook_connection.screenshot()
+        image = await active_facebook_connection().screenshot()
         return Response(image, media_type='image/jpeg',
             headers={'Cache-Control':'no-store, private',
                      'X-Content-Type-Options':'nosniff'})

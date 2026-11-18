@@ -228,6 +228,15 @@
   <dialog id="facebookDialog" class="modal fb-modal">
     <div class="modal-head"><div><div class="eyebrow">FACEBOOK MARKETPLACE</div><h2>Connect Facebook to Railway</h2></div><button class="icon-button" id="closeFacebookDialog" aria-label="Close">×</button></div>
     <p class="form-help">Car Search Hub needs to be signed into Facebook <strong>on its Railway server</strong>, not just in the Facebook app on your phone. This checks Marketplace access before claiming it is connected.</p>
+    <form id="fbAccountForm" class="fb-account hidden" autocomplete="off">
+      <p class="form-help"><strong>Your Facebook login.</strong> Used only to sign this server's browser into <em>your</em> Facebook so Marketplace searches run as you. It is kept in your own Google Drive (in Car Search's private app folder), never shown again here, and not included in backups.</p>
+      <label class="input-block">Facebook email or phone number
+        <input id="fbAccountEmail" class="field" type="text" maxlength="200" autocomplete="off" placeholder="you@example.com or 07700 900000"></label>
+      <label class="input-block">Facebook password
+        <input id="fbAccountPassword" class="field" type="password" maxlength="200" autocomplete="new-password" placeholder="Your Facebook password"></label>
+      <div class="settings-line"><button class="button dark" type="submit" id="fbAccountSave">Save Facebook login</button><button class="button quiet" type="button" id="fbAccountRemove">Remove</button></div>
+      <p id="fbAccountStatus" class="helper" role="status"></p>
+    </form>
     <div id="fbLoginMessage" class="fb-message" role="status">Facebook connection has not been checked yet.</div>
     <p id="fbConnectionDiagnostic" class="helper" role="status"></p>
     <div id="fbVerification" class="fb-verification hidden">
@@ -262,7 +271,7 @@
       </div>
       <p class="helper">Any Facebook challenge must be completed by you. The app does not bypass verification or transfer your phone's Facebook login to Railway.</p>
     </div>
-    <p class="helper">Changed your Facebook password in Railway? Clear the previous server session first, then connect again. This does not remove saved car searches or notes.</p>
+    <p class="helper" id="fbResetHelp">Changed your Facebook password in Railway? Clear the previous server session first, then connect again. This does not remove saved car searches or notes.</p>
     <div class="modal-actions"><button class="button quiet" id="fbReset">Clear old FB session</button><button class="button quiet" id="fbCancel">Close</button><button class="button dark" id="fbConnect">Connect and check Facebook</button></div>
   </dialog>
 

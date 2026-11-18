@@ -40,26 +40,30 @@ class FakeGoogle:
         path = url.path
         if request.method == 'GET' and path == '/drive/v3/files':
             assert url.params['spaces'] == 'appDataFolder'
-            return httpx.Response(200, json={'files': [{'id': i} for i in drive]})
+            name = url.params['q'].split("'")[1]
+            return httpx.Response(200, json={'files': [{'id': i} for i, f in drive.items() if f['name'] == name]})
         if request.method == 'GET' and path.startswith('/drive/v3/files/'):
-            return httpx.Response(200, content=drive[path.rsplit('/', 1)[1]])
+            return httpx.Response(200, content=drive[path.rsplit('/', 1)[1]]['data'])
         if request.method == 'POST' and path == '/upload/drive/v3/files':
             body = request.content
             assert b'"parents": ["appDataFolder"]' in body
+            metadata = json.loads(body.split(b'\r\n\r\n', 2)[1].split(b'\r\n')[0])
             data = body.split(b'\r\n\r\n', 2)[2].rsplit(b'\r\n--', 1)[0]
-            file_id = 'file-' + info['sub']
-            drive[file_id] = data
+            file_id = f"file-{info['sub']}-{metadata['name']}"
+            drive[file_id] = {'name': metadata['name'], 'data': data}
             self.uploads += 1
             return httpx.Response(200, json={'id': file_id})
         if request.method == 'PATCH' and path.startswith('/upload/drive/v3/files/'):
-            drive[path.rsplit('/', 1)[1]] = request.content
+            drive[path.rsplit('/', 1)[1]]['data'] = request.content
             self.uploads += 1
             return httpx.Response(200, json={'id': path.rsplit('/', 1)[1]})
         return httpx.Response(404)
 
-    def saved(self, sub):
-        files = self.drives[sub]
-        return json.loads(next(iter(files.values()))) if files else None
+    def saved(self, sub, name='car-search-hub.json'):
+        for item in self.drives[sub].values():
+            if item['name'] == name:
+                return json.loads(item['data'])
+        return None
 
 
 def load_google_server(monkeypatch, tmp_path, fake, owner=''):
@@ -168,3 +172,88 @@ async def test_expired_google_sign_in_asks_the_browser_to_renew(tmp_path, monkey
         assert response.status_code == 401 and response.json()['reauth'] == 'google'
         await alex.post('/api/google/session', json={'accessToken': 'token-alex-aaaaaaaaaaaaaaaa'})
         assert (await alex.get('/api/state')).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_each_person_has_their_own_facebook_login_in_their_drive(tmp_path, monkeypatch):
+    monkeypatch.setenv('FACEBOOK_EMAIL', 'server-account@example.com')
+    monkeypatch.setenv('FACEBOOK_PASSWORD', 'server-password')
+    fake = FakeGoogle()
+    fake.add('token-alex-aaaaaaaaaaaaaaaa', 'alex', 'alex@example.com')
+    fake.add('token-sam-bbbbbbbbbbbbbbbbbb', 'sam', 'sam@example.com')
+    server = load_google_server(monkeypatch, tmp_path, fake)
+    from src import facebook_profile, scanner
+    async with client_for(server) as alex, client_for(server) as sam:
+        await alex.post('/api/google/session', json={'accessToken': 'token-alex-aaaaaaaaaaaaaaaa'})
+        await sam.post('/api/google/session', json={'accessToken': 'token-sam-bbbbbbbbbbbbbbbbbb'})
+        empty = (await alex.get('/api/facebook/account')).json()
+        assert empty == {'personal': True, 'email': '', 'hasPassword': False}
+        assert (await alex.put('/api/facebook/account', json={'email': 'alex.fb@example.com'})).status_code == 400
+
+        saved = await alex.put('/api/facebook/account', json={'email': 'alex.fb@example.com', 'password': 'alex-secret'})
+        assert saved.status_code == 200, saved.text
+        assert saved.json() == {'personal': True, 'email': 'alex.fb@example.com', 'hasPassword': True}
+        assert 'alex-secret' not in saved.text
+        assert fake.saved('alex', 'car-search-facebook.json')['password'] == 'alex-secret'
+        # Changing only the email keeps the saved password.
+        kept = await alex.put('/api/facebook/account', json={'email': 'alex2@example.com', 'password': ''})
+        assert kept.json()['hasPassword'] is True
+        assert fake.saved('alex', 'car-search-facebook.json')['password'] == 'alex-secret'
+
+        # Sam has no Facebook login and never gets Alex's or the server's.
+        assert (await sam.get('/api/facebook/account')).json()['email'] == ''
+        # The password is never in the car data, the backup export or the page state.
+        for client in (alex, sam):
+            assert 'alex-secret' not in (await client.get('/api/state')).text
+            assert 'alex-secret' not in (await client.get('/api/export')).text
+
+        alex_ws = server.GOOGLE_STORE.workspaces['alex']
+        sam_ws = server.GOOGLE_STORE.workspaces['sam']
+        token = facebook_profile.PROFILE.set(alex_ws.facebook_profile)
+        try:
+            assert facebook_profile.active().credentials() == ('alex2@example.com', 'alex-secret')
+            alex_session = scanner.facebook_state_path()
+        finally:
+            facebook_profile.PROFILE.reset(token)
+        token = facebook_profile.PROFILE.set(sam_ws.facebook_profile)
+        try:
+            assert facebook_profile.active().credentials() == ('', '')
+            assert scanner.facebook_state_path() != alex_session
+            with pytest.raises(ValueError, match='Car Search Settings'):
+                class NoCookies:
+                    async def cookies(self, url):
+                        return []
+                await scanner.ensure_facebook_session(NoCookies())
+        finally:
+            facebook_profile.PROFILE.reset(token)
+        assert not str(alex_session).startswith(str(tmp_path))  # not in the shared data folder
+
+        # A verified Facebook browser session is saved to Alex's Drive too.
+        alex_session.write_text(json.dumps({'cookies': [{'name': 'c_user', 'value': '1'}], 'origins': []}))
+        assert await server.GOOGLE_STORE.save_facebook(alex_ws)
+        assert fake.saved('alex', 'car-search-facebook.json')['session']['cookies'][0]['name'] == 'c_user'
+
+        # After a restart, Alex's Facebook login and session come back from Drive.
+        restarted = load_google_server(monkeypatch, tmp_path, fake)
+        async with client_for(restarted) as again:
+            await again.post('/api/google/session', json={'accessToken': 'token-alex-aaaaaaaaaaaaaaaa'})
+            assert (await again.get('/api/facebook/account')).json()['email'] == 'alex2@example.com'
+            profile = restarted.GOOGLE_STORE.workspaces['alex'].facebook_profile
+            assert json.loads(profile.managed_path().read_text())['cookies'][0]['value'] == '1'
+
+        removed = await alex.delete('/api/facebook/account')
+        assert removed.json() == {'personal': True, 'email': '', 'hasPassword': False}
+        assert fake.saved('alex', 'car-search-facebook.json')['password'] == ''
+        assert not alex_session.exists()
+
+
+@pytest.mark.asyncio
+async def test_password_mode_still_uses_server_facebook_login(monkeypatch):
+    import server
+    from src import facebook_profile
+    monkeypatch.setenv('FACEBOOK_EMAIL', 'server-account@example.com')
+    monkeypatch.setenv('FACEBOOK_PASSWORD', 'server-password')
+    assert facebook_profile.active().credentials() == ('server-account@example.com', 'server-password')
+    monkeypatch.setattr(server, 'PASSWORD', '')
+    async with client_for(server) as client:
+        assert (await client.get('/api/facebook/account')).json() == {'personal': False}

@@ -1935,6 +1935,46 @@ function fbApplyStatus(status) {
   fbLastKind = kind;
   $('fbConnect').textContent = kind === 'connected' ? 'Check connection again' : 'Connect and check Facebook';
 }
+// Google sign-in mode: each person enters their own Facebook login.
+async function fbLoadAccount() {
+  if (authInfo.mode!=='google') return;
+  try {
+    const account=await api('/api/facebook/account');
+    showFacebookAccount(account);
+  } catch {}
+}
+function showFacebookAccount(account) {
+  $('fbAccountForm').classList.toggle('hidden',!account.personal);
+  if (!account.personal) return;
+  $('fbResetHelp').textContent='Facebook asking you to sign in again? Clear the old session, then connect again. Saving a new Facebook login above does this for you. Your car searches and notes are not affected.';
+  $('fbAccountEmail').value=account.email || '';
+  $('fbAccountPassword').value='';
+  $('fbAccountPassword').placeholder=account.hasPassword ? 'Saved – leave blank to keep it' : 'Your Facebook password';
+  $('fbAccountRemove').classList.toggle('hidden',!account.email && !account.hasPassword);
+  $('fbAccountStatus').textContent=account.email && account.hasPassword ?
+    'Saved for '+account.email+'. Select Connect Facebook below to sign in.' :
+    'Not set yet. Facebook results need your own Facebook login.';
+}
+$('fbAccountForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  $('fbAccountSave').disabled=true;
+  try {
+    const account=await api('/api/facebook/account',{method:'PUT',body:JSON.stringify({
+      email:$('fbAccountEmail').value.trim(), password:$('fbAccountPassword').value})});
+    showFacebookAccount(account);
+    toast('Facebook login saved to your Google Drive. Select Connect Facebook to sign in.');
+    void fbLoadStatus();
+  } catch (error) { $('fbAccountStatus').textContent=error.message; }
+  finally { $('fbAccountSave').disabled=false; }
+});
+$('fbAccountRemove').addEventListener('click', async () => {
+  if (!confirm('Remove your Facebook login and sign Car Search out of your Facebook?')) return;
+  try {
+    showFacebookAccount(await api('/api/facebook/account',{method:'DELETE'}));
+    toast('Facebook login removed.');
+    void fbLoadStatus();
+  } catch (error) { $('fbAccountStatus').textContent=error.message; }
+});
 async function fbLoadStatus() {
   try {
     const status = await api('/api/facebook/connection/status');
@@ -1950,7 +1990,7 @@ setInterval(() => {
 // Keep the green connected indicator tied to a recently verified session.
 setInterval(fbLoadStatus, 300000);
 async function fbConnect() {
-  if (!$('facebookDialog').open) show('facebookDialog');
+  if (!$('facebookDialog').open) { show('facebookDialog'); void fbLoadAccount(); }
   fbMessage('Checking Marketplace in the Railway browser…');
   const button = $('fbConnect');
   button.disabled = true;
@@ -2500,9 +2540,9 @@ document.addEventListener('keydown', event => {
   }
 });
 $('facebookLoginSettings').addEventListener('click', () => {
-  hide('settingsDialog'); show('facebookDialog'); fbLoadStatus();
+  hide('settingsDialog'); show('facebookDialog'); fbLoadStatus(); void fbLoadAccount();
 });
-$('facebookLoginTop').addEventListener('click', () => { show('facebookDialog'); fbLoadStatus(); });
+$('facebookLoginTop').addEventListener('click', () => { show('facebookDialog'); fbLoadStatus(); void fbLoadAccount(); });
 $('closeFacebookDialog').addEventListener('click', fbClose);
 $('fbCancel').addEventListener('click', fbClose);
 $('fbConnect').addEventListener('click', fbConnect);
