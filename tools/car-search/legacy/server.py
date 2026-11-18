@@ -106,6 +106,35 @@ def remove_photo_colour_guesses(raw):
             car['colourSource'] = 'unknown'
 
 
+def clean_home(raw):
+    """A user-chosen distance origin: a short label and UK-ish coordinates."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError('Invalid home location.')
+    label = ' '.join(str(raw.get('label') or '').split())[:80]
+    try:
+        lat, lng = float(raw.get('lat')), float(raw.get('lng'))
+    except (TypeError, ValueError):
+        raise ValueError('Invalid home location.')
+    if not label or not (49 <= lat <= 61.5 and -9 <= lng <= 2.5):
+        raise ValueError('Home location must be a UK place.')
+    return {'label': label, 'lat': lat, 'lng': lng}
+
+
+def clean_options(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    depth = str(raw.get('pageDepth', 3))
+    options = {'pageDepth': int(depth) if depth in ('1', '3', '5', '10', '20') else 3}
+    try:
+        home = clean_home(raw.get('home'))
+    except ValueError:
+        home = None
+    if home:
+        options['home'] = home
+    return options
+
+
 def prepare_state(raw):
     """Bring saved data (file, Google Drive or backup) up to the current format."""
     if not (isinstance(raw, dict) and raw.get('version') == 1 and isinstance(raw.get('searches'), list)
@@ -793,35 +822,6 @@ async def duplicates(request: Request):
             state['manualDuplicates'][source] = root
         store()
         return result()
-
-def clean_home(raw):
-    """A user-chosen distance origin: a short label and UK-ish coordinates."""
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        raise ValueError('Invalid home location.')
-    label = ' '.join(str(raw.get('label') or '').split())[:80]
-    try:
-        lat, lng = float(raw.get('lat')), float(raw.get('lng'))
-    except (TypeError, ValueError):
-        raise ValueError('Invalid home location.')
-    if not label or not (49 <= lat <= 61.5 and -9 <= lng <= 2.5):
-        raise ValueError('Home location must be a UK place.')
-    return {'label': label, 'lat': lat, 'lng': lng}
-
-
-def clean_options(raw):
-    raw = raw if isinstance(raw, dict) else {}
-    depth = str(raw.get('pageDepth', 3))
-    options = {'pageDepth': int(depth) if depth in ('1', '3', '5', '10', '20') else 3}
-    try:
-        home = clean_home(raw.get('home'))
-    except ValueError:
-        home = None
-    if home:
-        options['home'] = home
-    return options
-
 
 @app.patch('/api/options')
 async def change_options(request: Request):
