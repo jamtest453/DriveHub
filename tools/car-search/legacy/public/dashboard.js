@@ -121,15 +121,95 @@ function accept(payload) {
     scanSearchIds=scanBusy ? (payload.job.searchIds || []) : [];
   }
 }
-async function api(url, options={}) {
-  const response = await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...options});
-  if (!response.ok) {
-    if (response.status===401 && url!=='/api/login') $('loginOverlay').classList.remove('hidden');
-    let msg='Request failed ('+response.status+').';
-    try { const body=await response.json(); msg=body.detail || body.error || msg; } catch {}
-    throw new Error(msg);
+// Google sign-in (when enabled on the server): each person's data lives in
+// their own Google Drive. The server needs a fresh Google token about hourly.
+const GOOGLE_LOGIN_SCOPE='openid email https://www.googleapis.com/auth/drive.appdata';
+let authInfo={mode:'password'}, googleScript=null, googleRefresh=null, googleTokenExpires=0, lastSaveError='';
+function loadGoogleScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  if (!googleScript) googleScript=new Promise((resolve,reject) => {
+    const tag=document.createElement('script');
+    tag.src='https://accounts.google.com/gsi/client'; tag.async=true;
+    tag.onload=()=>resolve();
+    tag.onerror=()=>{ googleScript=null; reject(new Error('Google sign-in could not load. Check your connection.')); };
+    document.head.appendChild(tag);
+  });
+  return googleScript;
+}
+async function googleToken(prompt) {
+  await loadGoogleScript();
+  return new Promise((resolve,reject) => {
+    const client=google.accounts.oauth2.initTokenClient({
+      client_id:authInfo.googleClientId, scope:GOOGLE_LOGIN_SCOPE,
+      callback:reply => reply?.error ? reject(new Error(reply.error_description || 'Google sign-in was not completed.')) : resolve(reply),
+      error_callback:error => reject(new Error(error?.type==='popup_closed' ? 'Google sign-in was closed.' :
+        error?.type==='popup_failed_to_open' ? 'Allow pop-ups for this site to sign in with Google.' :
+        (error?.message || 'Google sign-in was not completed.')))
+    });
+    client.requestAccessToken({prompt});
+  });
+}
+async function signInWithGoogle(prompt='') {
+  if (googleRefresh) return googleRefresh;
+  googleRefresh=(async () => {
+    const reply=await googleToken(prompt);
+    const answer=await rawApi('/api/google/session',{method:'POST',body:JSON.stringify({accessToken:reply.access_token})});
+    googleTokenExpires=Date.now()+Number(reply.expires_in || 3600)*1000;
+    authInfo.email=answer.email; authInfo.authenticated=true;
+    showAccount();
+    return answer;
+  })();
+  try { return await googleRefresh; } finally { googleRefresh=null; }
+}
+function showAccount() {
+  const google=authInfo.mode==='google';
+  $('googleAccountLine').classList.toggle('hidden',!google);
+  if (google) {
+    $('googleAccountLabel').textContent=authInfo.email ? 'Signed in as '+authInfo.email : 'Signed in with Google';
+    $('storageHelp').textContent='Your searches, listings, saved cars and notes are kept in your own Google Drive (in a private Car Search app folder), not on this server. They appear on any device where you sign in with the same Google account.';
   }
-  return response.json();
+}
+function showLogin(message='') {
+  const google=authInfo.mode==='google';
+  $('passwordLogin').classList.toggle('hidden',google);
+  $('loginSubmit').classList.toggle('hidden',google);
+  $('googleLoginButton').classList.toggle('hidden',!google);
+  $('loginPassword').required=!google;
+  $('loginIntro').textContent=google ?
+    'Sign in with your Google account. Your searches and saved cars are kept in your own Google Drive, so each person sees only their own.' :
+    'Your searches and saved cars are on your server. Sign in to see them from any device.';
+  $('loginError').textContent=message;
+  $('loginOverlay').classList.remove('hidden');
+}
+async function rawApi(url, options={}) {
+  const response = await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...options});
+  let body=null;
+  try { body=await response.json(); } catch {}
+  if (!response.ok) {
+    const error=new Error(body?.detail || body?.error || 'Request failed ('+response.status+').');
+    error.status=response.status; error.reauth=body?.reauth;
+    throw error;
+  }
+  return body;
+}
+async function api(url, options={}) {
+  try {
+    const body=await rawApi(url,options);
+    if (body && 'saveError' in body && body.saveError!==lastSaveError) {
+      lastSaveError=body.saveError || '';
+      if (lastSaveError) toast(lastSaveError,true);
+    }
+    return body;
+  } catch (error) {
+    if (error.status===401 && url!=='/api/login' && url!=='/api/google/session') {
+      if (error.reauth==='google' && authInfo.authenticated) {
+        // Quietly renew the hourly Google sign-in, then retry once.
+        try { await signInWithGoogle(''); return await rawApi(url,options); }
+        catch (renewError) { authInfo.authenticated=false; showLogin('Your Google sign-in has expired. Sign in again to keep saving to Google Drive.'); }
+      } else showLogin();
+    }
+    throw error;
+  }
 }
 async function load() {
   const payload=await api('/api/state');
@@ -1834,7 +1914,7 @@ function fbApplyStatus(status) {
   }
   fbMessage(message, ['blocked','unverified','error','needs_credentials','invalid_credentials','expired','cooldown'].includes(kind));
   $('fbConnectionDiagnostic').textContent =
-    'Railway check: ' + (status.stage || 'Not started') +
+    'Last check: ' + (status.stage || 'Not started') +
     (status.lastOutcome ? ' · ' + status.lastOutcome : '') +
     (retry ? ' · Next attempt available in ' + retry + ' seconds' : '');
   $('fbConnect').disabled = retry > 0 || kind === 'connecting' || kind === 'checking_saved';
@@ -1843,18 +1923,58 @@ function fbApplyStatus(status) {
   const facebookButton = $('facebookLoginTop');
   facebookButton.classList.toggle('fb-connected', kind === 'connected');
   if (kind === 'connected') {
-    if (fbLastKind !== 'connected') toast('Railway Marketplace session verified.');
-    facebookButton.title = 'Facebook Marketplace connected and verified on Railway';
+    if (fbLastKind !== 'connected') toast('Facebook Marketplace connected.');
+    facebookButton.title = 'Facebook Marketplace connected and verified';
     facebookButton.setAttribute('aria-label', 'FB marketplace connected');
     facebookButton.innerHTML = '✓ <span class="fb-label-wide">FB marketplace connected</span><span class="fb-label-small">FB connected</span>';
   } else {
-    facebookButton.title = 'Connect Facebook to Railway';
+    facebookButton.title = 'Connect Facebook';
     facebookButton.setAttribute('aria-label', 'Connect Facebook');
     facebookButton.innerHTML = 'f <span class="on-wide">Connect Facebook</span>';
   }
   fbLastKind = kind;
   $('fbConnect').textContent = kind === 'connected' ? 'Check connection again' : 'Connect and check Facebook';
 }
+// Google sign-in mode: each person enters their own Facebook login.
+async function fbLoadAccount() {
+  if (authInfo.mode!=='google') return;
+  try {
+    const account=await api('/api/facebook/account');
+    showFacebookAccount(account);
+  } catch {}
+}
+function showFacebookAccount(account) {
+  $('fbAccountForm').classList.toggle('hidden',!account.personal);
+  if (!account.personal) return;
+  $('fbResetHelp').textContent='Facebook asking you to sign in again? Clear the old session, then connect again. Saving a new Facebook login above does this for you. Your car searches and notes are not affected.';
+  $('fbAccountEmail').value=account.email || '';
+  $('fbAccountPassword').value='';
+  $('fbAccountPassword').placeholder=account.hasPassword ? 'Saved – leave blank to keep it' : 'Your Facebook password';
+  $('fbAccountRemove').classList.toggle('hidden',!account.email && !account.hasPassword);
+  $('fbAccountStatus').textContent=account.email && account.hasPassword ?
+    'Saved for '+account.email+'. Select Connect Facebook below to sign in.' :
+    'Not set yet. Facebook results need your own Facebook login.';
+}
+$('fbAccountForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  $('fbAccountSave').disabled=true;
+  try {
+    const account=await api('/api/facebook/account',{method:'PUT',body:JSON.stringify({
+      email:$('fbAccountEmail').value.trim(), password:$('fbAccountPassword').value})});
+    showFacebookAccount(account);
+    toast('Facebook login saved to your Google Drive. Select Connect Facebook to sign in.');
+    void fbLoadStatus();
+  } catch (error) { $('fbAccountStatus').textContent=error.message; }
+  finally { $('fbAccountSave').disabled=false; }
+});
+$('fbAccountRemove').addEventListener('click', async () => {
+  if (!confirm('Remove your Facebook login and sign Car Search out of your Facebook?')) return;
+  try {
+    showFacebookAccount(await api('/api/facebook/account',{method:'DELETE'}));
+    toast('Facebook login removed.');
+    void fbLoadStatus();
+  } catch (error) { $('fbAccountStatus').textContent=error.message; }
+});
 async function fbLoadStatus() {
   try {
     const status = await api('/api/facebook/connection/status');
@@ -1870,8 +1990,8 @@ setInterval(() => {
 // Keep the green connected indicator tied to a recently verified session.
 setInterval(fbLoadStatus, 300000);
 async function fbConnect() {
-  if (!$('facebookDialog').open) show('facebookDialog');
-  fbMessage('Checking Marketplace in the Railway browser…');
+  if (!$('facebookDialog').open) { show('facebookDialog'); void fbLoadAccount(); }
+  fbMessage('Checking Marketplace in Car Search's browser…');
   const button = $('fbConnect');
   button.disabled = true;
   try {
@@ -1883,13 +2003,13 @@ async function fbConnect() {
       fbApplyStatus(status);
     }
     if (status.state === 'connecting') {
-      fbMessage('Railway is still checking Facebook. Close this window and return to check the status shortly.');
+      fbMessage('Car Search is still checking Facebook. Close this window and return to check the status shortly.');
     }
   } catch(e) { fbMessage(e.message,true); }
   finally { if (button.disabled) await fbLoadStatus(); }
 }
 async function fbRecheck() {
-  fbMessage('Checking whether Facebook approved the Railway login…');
+  fbMessage('Checking whether Facebook approved the sign-in…');
   $('fbRecheck').disabled = true;
   try { fbApplyStatus(await api('/api/facebook/connection/recheck',{method:'POST',body:'{}'})); }
   catch(e) { fbMessage(e.message,true); }
@@ -1900,7 +2020,7 @@ async function fbCode() {
   if (!/^\d{4,10}$/.test(code)) { fbMessage('Enter the numeric verification code (4–10 digits).',true); return; }
   $('fbApprovalCode').value = '';
   $('fbSendCode').disabled = true;
-  fbMessage('Submitting the verification code in Railway…');
+  fbMessage('Submitting the verification code…');
   try { fbApplyStatus(await api('/api/facebook/connection/code',{method:'POST',body:JSON.stringify({code})})); }
   catch(e) { fbMessage(e.message,true); }
   finally { $('fbSendCode').disabled = false; }
@@ -2420,19 +2540,19 @@ document.addEventListener('keydown', event => {
   }
 });
 $('facebookLoginSettings').addEventListener('click', () => {
-  hide('settingsDialog'); show('facebookDialog'); fbLoadStatus();
+  hide('settingsDialog'); show('facebookDialog'); fbLoadStatus(); void fbLoadAccount();
 });
-$('facebookLoginTop').addEventListener('click', () => { show('facebookDialog'); fbLoadStatus(); });
+$('facebookLoginTop').addEventListener('click', () => { show('facebookDialog'); fbLoadStatus(); void fbLoadAccount(); });
 $('closeFacebookDialog').addEventListener('click', fbClose);
 $('fbCancel').addEventListener('click', fbClose);
 $('fbConnect').addEventListener('click', fbConnect);
 $('fbReset').addEventListener('click', async () => {
-  if (!window.confirm('Clear the saved Facebook session on Railway? Your car searches, notes and saved adverts will not change.')) return;
+  if (!window.confirm('Clear the saved Facebook session in Car Search? Your car searches, notes and saved adverts will not change.')) return;
   $('fbReset').disabled = true;
   try {
     const status = await api('/api/facebook/connection/reset', {method:'POST',body:'{}'});
     fbApplyStatus(status);
-    toast('Old Facebook Railway session cleared.');
+    toast('Old Facebook session cleared.');
   } catch(error) {
     fbMessage(error.message, true);
   } finally {
@@ -2531,5 +2651,34 @@ $('loginForm').addEventListener('submit',async event => {
     await load();
   } catch(error) { $('loginError').textContent=error.message; }
 });
-load().then(() => syncStatus()).catch(error => setNotice('Unable to load the dashboard: '+error.message));
+$('googleLoginButton').addEventListener('click', async () => {
+  $('loginError').textContent='';
+  $('googleLoginButton').disabled=true;
+  try {
+    await signInWithGoogle(authInfo.everSignedIn ? '' : 'select_account');
+    $('loginOverlay').classList.add('hidden');
+    await load(); void syncStatus();
+  } catch (error) { $('loginError').textContent=error.message; }
+  finally { $('googleLoginButton').disabled=false; }
+});
+$('googleSignOut').addEventListener('click', async () => {
+  try { await rawApi('/api/logout',{method:'POST',body:'{}'}); } catch {}
+  authInfo.authenticated=false; authInfo.email=null;
+  state=initial(); revision=-1; hide('settingsDialog'); render();
+  showLogin('Signed out. Your data stays in your Google Drive.');
+});
+// Renew the Google sign-in shortly before it expires while the page is in
+// use (a click counts as a user gesture, so the renewal pop-up is allowed).
+document.addEventListener('click', () => {
+  if (authInfo.mode==='google' && authInfo.authenticated && googleTokenExpires &&
+      googleTokenExpires-Date.now() < 10*60*1000) void signInWithGoogle('').catch(() => {});
+}, true);
+async function start() {
+  try { authInfo=await rawApi('/api/auth'); } catch { authInfo={mode:'password'}; }
+  authInfo.everSignedIn=!!authInfo.authenticated;
+  showAccount();
+  if (authInfo.mode==='google' && !authInfo.authenticated) { showLogin(); return; }
+  await load(); void syncStatus();
+}
+start().catch(error => setNotice('Unable to load the dashboard: '+error.message));
 setInterval(syncStatus,1800);

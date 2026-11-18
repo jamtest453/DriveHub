@@ -13,11 +13,31 @@ from .writeoff import is_visible_writeoff
 
 # Keep browser cookies on the persistent Railway volume. Credentials are read from
 # Railway Variables only; never return, print or persist the password itself.
+from . import facebook_profile
+
 _FB_LOGIN_LOCK = asyncio.Lock()
 _FB_LAST_FAILED_ATTEMPT = 0.0
 
 
+def _last_failed():
+    profile = facebook_profile.active()
+    return profile.last_failed_attempt if profile.personal else _FB_LAST_FAILED_ATTEMPT
+
+
+def _set_last_failed(value):
+    global _FB_LAST_FAILED_ATTEMPT
+    profile = facebook_profile.active()
+    if profile.personal:
+        profile.last_failed_attempt = value
+    else:
+        _FB_LAST_FAILED_ATTEMPT = value
+
+
 def facebook_state_path():
+    profile = facebook_profile.active()
+    if profile.personal:
+        # A signed-in person's own session only; never the server's.
+        return profile.managed_path()
     # The verified, managed session takes precedence over older manually
     # provided storage state. Otherwise a stale Railway variable overrides
     # an interactive sign-in and makes refresh look permanently logged out.
@@ -49,20 +69,19 @@ async def facebook_context(browser, use_saved_state=True):
 
 async def ensure_facebook_session(context):
     """Attempt one normal Facebook sign-in, never a CAPTCHA/2FA bypass."""
-    global _FB_LAST_FAILED_ATTEMPT
     cookies = await context.cookies("https://www.facebook.com")
     if any(c.get("name") == "c_user" for c in cookies):
         return
-    email = os.getenv("FACEBOOK_EMAIL", "").strip()
-    password = os.getenv("FACEBOOK_PASSWORD", "")
+    profile = facebook_profile.active()
+    email, password = profile.credentials()
     if not email or not password:
-        raise ValueError("Facebook is not signed in. Set FACEBOOK_EMAIL and FACEBOOK_PASSWORD in Railway Variables.")
+        raise ValueError("Facebook is not signed in. Set " + profile.where_to_set() + ".")
     import time
     async with _FB_LOGIN_LOCK:
         cookies = await context.cookies("https://www.facebook.com")
         if any(c.get("name") == "c_user" for c in cookies):
             return
-        if time.monotonic() - _FB_LAST_FAILED_ATTEMPT < 900:
+        if time.monotonic() - _last_failed() < 900:
             raise ValueError("Facebook login was unsuccessful recently. Retry later or complete account verification in Facebook.")
         login_page = await context.new_page()
         try:
@@ -78,22 +97,23 @@ async def ensure_facebook_session(context):
                 if any(c.get("name") == "c_user" for c in cookies):
                     break
             else:
-                _FB_LAST_FAILED_ATTEMPT = time.monotonic()
-                raise ValueError("Facebook did not complete login from Railway. Check your credentials and any Facebook security alert.")
+                _set_last_failed(time.monotonic())
+                raise ValueError("Facebook did not complete login. Check your credentials and any Facebook security alert.")
             # A cookie may be set before two-factor verification has completed.
             # Never falsely treat a challenge page as a completed sign-in.
             if any(marker in login_page.url.lower() for marker in ("checkpoint", "two_step", "two-factor", "recover", "login/")):
-                _FB_LAST_FAILED_ATTEMPT = time.monotonic()
-                raise ValueError("Facebook requires further account verification in the Railway browser. Automatic login cannot complete it.")
-            dest = Path(os.getenv("DATA_DIR", "/data")) / "facebook-session.json"
+                _set_last_failed(time.monotonic())
+                raise ValueError("Facebook requires further account verification in Car Search's browser. Automatic login cannot complete it.")
+            dest = profile.managed_path()
             dest.parent.mkdir(parents=True, exist_ok=True)
             temp = dest.with_suffix(".tmp")
             await context.storage_state(path=str(temp))
             os.chmod(temp, 0o600)
             os.replace(temp, dest)
-            _FB_LAST_FAILED_ATTEMPT = 0.0
+            _set_last_failed(0.0)
+            profile.saved()
         except (PlaywrightTimeout, OSError) as exc:
-            _FB_LAST_FAILED_ATTEMPT = time.monotonic()
+            _set_last_failed(time.monotonic())
             raise ValueError("Facebook login timed out or session could not be saved. Account verification may be required.") from exc
         finally:
             await login_page.close()
@@ -184,7 +204,7 @@ async def scan_link(browser, link, depth, stopped, progress):
             # An explicit "Connect Facebook" must verify Marketplace first.
             cookies = await context.cookies("https://www.facebook.com")
             if not any(cookie.get("name") == "c_user" for cookie in cookies):
-                raise ValueError("Railway is not signed into Facebook. Select Connect Facebook in the dashboard first.")
+                raise ValueError("Car Search is not signed into Facebook. Select Connect Facebook in the dashboard first.")
         else:
             context = await browser.new_context(
                 viewport={'width': 1440, 'height': 1100},
