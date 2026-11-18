@@ -98,12 +98,12 @@ async def ensure_facebook_session(context):
                     break
             else:
                 _set_last_failed(time.monotonic())
-                raise ValueError("Facebook did not complete login from Railway. Check your credentials and any Facebook security alert.")
+                raise ValueError("Facebook did not complete login. Check your credentials and any Facebook security alert.")
             # A cookie may be set before two-factor verification has completed.
             # Never falsely treat a challenge page as a completed sign-in.
             if any(marker in login_page.url.lower() for marker in ("checkpoint", "two_step", "two-factor", "recover", "login/")):
                 _set_last_failed(time.monotonic())
-                raise ValueError("Facebook requires further account verification in the Railway browser. Automatic login cannot complete it.")
+                raise ValueError("Facebook requires further account verification in Car Search's browser. Automatic login cannot complete it.")
             dest = profile.managed_path()
             dest.parent.mkdir(parents=True, exist_ok=True)
             temp = dest.with_suffix(".tmp")
@@ -204,7 +204,7 @@ async def scan_link(browser, link, depth, stopped, progress):
             # An explicit "Connect Facebook" must verify Marketplace first.
             cookies = await context.cookies("https://www.facebook.com")
             if not any(cookie.get("name") == "c_user" for cookie in cookies):
-                raise ValueError("Railway is not signed into Facebook. Select Connect Facebook in the dashboard first.")
+                raise ValueError("Car Search is not signed into Facebook. Select Connect Facebook in the dashboard first.")
         else:
             context = await browser.new_context(
                 viewport={'width': 1440, 'height': 1100},

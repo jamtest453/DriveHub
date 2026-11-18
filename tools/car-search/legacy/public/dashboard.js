@@ -1914,7 +1914,7 @@ function fbApplyStatus(status) {
   }
   fbMessage(message, ['blocked','unverified','error','needs_credentials','invalid_credentials','expired','cooldown'].includes(kind));
   $('fbConnectionDiagnostic').textContent =
-    'Railway check: ' + (status.stage || 'Not started') +
+    'Last check: ' + (status.stage || 'Not started') +
     (status.lastOutcome ? ' · ' + status.lastOutcome : '') +
     (retry ? ' · Next attempt available in ' + retry + ' seconds' : '');
   $('fbConnect').disabled = retry > 0 || kind === 'connecting' || kind === 'checking_saved';
@@ -1923,12 +1923,12 @@ function fbApplyStatus(status) {
   const facebookButton = $('facebookLoginTop');
   facebookButton.classList.toggle('fb-connected', kind === 'connected');
   if (kind === 'connected') {
-    if (fbLastKind !== 'connected') toast('Railway Marketplace session verified.');
-    facebookButton.title = 'Facebook Marketplace connected and verified on Railway';
+    if (fbLastKind !== 'connected') toast('Facebook Marketplace connected.');
+    facebookButton.title = 'Facebook Marketplace connected and verified';
     facebookButton.setAttribute('aria-label', 'FB marketplace connected');
     facebookButton.innerHTML = '✓ <span class="fb-label-wide">FB marketplace connected</span><span class="fb-label-small">FB connected</span>';
   } else {
-    facebookButton.title = 'Connect Facebook to Railway';
+    facebookButton.title = 'Connect Facebook';
     facebookButton.setAttribute('aria-label', 'Connect Facebook');
     facebookButton.innerHTML = 'f <span class="on-wide">Connect Facebook</span>';
   }
@@ -1991,7 +1991,7 @@ setInterval(() => {
 setInterval(fbLoadStatus, 300000);
 async function fbConnect() {
   if (!$('facebookDialog').open) { show('facebookDialog'); void fbLoadAccount(); }
-  fbMessage('Checking Marketplace in the Railway browser…');
+  fbMessage('Checking Marketplace in Car Search's browser…');
   const button = $('fbConnect');
   button.disabled = true;
   try {
@@ -2003,13 +2003,13 @@ async function fbConnect() {
       fbApplyStatus(status);
     }
     if (status.state === 'connecting') {
-      fbMessage('Railway is still checking Facebook. Close this window and return to check the status shortly.');
+      fbMessage('Car Search is still checking Facebook. Close this window and return to check the status shortly.');
     }
   } catch(e) { fbMessage(e.message,true); }
   finally { if (button.disabled) await fbLoadStatus(); }
 }
 async function fbRecheck() {
-  fbMessage('Checking whether Facebook approved the Railway login…');
+  fbMessage('Checking whether Facebook approved the sign-in…');
   $('fbRecheck').disabled = true;
   try { fbApplyStatus(await api('/api/facebook/connection/recheck',{method:'POST',body:'{}'})); }
   catch(e) { fbMessage(e.message,true); }
@@ -2020,7 +2020,7 @@ async function fbCode() {
   if (!/^\d{4,10}$/.test(code)) { fbMessage('Enter the numeric verification code (4–10 digits).',true); return; }
   $('fbApprovalCode').value = '';
   $('fbSendCode').disabled = true;
-  fbMessage('Submitting the verification code in Railway…');
+  fbMessage('Submitting the verification code…');
   try { fbApplyStatus(await api('/api/facebook/connection/code',{method:'POST',body:JSON.stringify({code})})); }
   catch(e) { fbMessage(e.message,true); }
   finally { $('fbSendCode').disabled = false; }
@@ -2547,12 +2547,12 @@ $('closeFacebookDialog').addEventListener('click', fbClose);
 $('fbCancel').addEventListener('click', fbClose);
 $('fbConnect').addEventListener('click', fbConnect);
 $('fbReset').addEventListener('click', async () => {
-  if (!window.confirm('Clear the saved Facebook session on Railway? Your car searches, notes and saved adverts will not change.')) return;
+  if (!window.confirm('Clear the saved Facebook session in Car Search? Your car searches, notes and saved adverts will not change.')) return;
   $('fbReset').disabled = true;
   try {
     const status = await api('/api/facebook/connection/reset', {method:'POST',body:'{}'});
     fbApplyStatus(status);
-    toast('Old Facebook Railway session cleared.');
+    toast('Old Facebook session cleared.');
   } catch(error) {
     fbMessage(error.message, true);
   } finally {

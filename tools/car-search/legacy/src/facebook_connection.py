@@ -38,33 +38,33 @@ async def marketplace_probe(context):
         url = page.url.lower()
         status = response.status if response else None
         if status in (401, 403, 429):
-            return "blocked", f"Facebook refused Marketplace from Railway (HTTP {status})."
+            return "blocked", f"Facebook refused Marketplace in Car Search's browser (HTTP {status})."
         if any(part in url for part in BAD_URL_PARTS):
-            return "verification", "Facebook redirected Railway to sign-in or a security checkpoint."
+            return "verification", "Facebook sent Car Search's browser to sign-in or a security checkpoint."
         body = (await page.locator("body").inner_text(timeout=12000))[:7000].lower()
         if any(term in body for term in CHALLENGE_TERMS):
-            return "verification", "Facebook is requiring further verification in the Railway browser."
+            return "verification", "Facebook is requiring further verification in Car Search's browser."
         if ("log in to facebook" in body or "log into facebook" in body
                 or await page.locator('input[name="email"], input[name="pass"]').count()):
-            return "verification", "Facebook is displaying its login page in Railway."
+            return "verification", "Facebook is showing its login page in Car Search's browser."
         if "marketplace isn't available" in body or "marketplace is not available" in body:
             return "blocked", "Facebook Marketplace is not accessible from this server/account."
         cookies = await context.cookies("https://www.facebook.com")
         if not any(c.get("name") == "c_user" for c in cookies):
-            return "verification", "Railway has no authenticated Facebook account cookie."
+            return "verification", "Car Search's browser is not signed into Facebook."
         if await page.locator('a[href*="/marketplace/item/"]').count():
-            return "connected", "Marketplace listings loaded in the Railway browser."
+            return "connected", "Marketplace listings loaded in Car Search's browser."
         if any(term in body for term in ("no results", "no listings", "nothing found", "couldn't find any listings")):
             return "connected", "Marketplace returned a genuine no-results page while signed in."
         # A Marketplace page title and a c_user cookie are not sufficient:
         # the server can render a shell without any accessible listings.
         if "content isn't available" in body or "content not available" in body:
-            return "blocked", "Facebook did not make Marketplace content available to Railway."
-        return "unverified", "A Facebook cookie exists, but real Marketplace results could not be loaded in Railway."
+            return "blocked", "Facebook did not make Marketplace content available to Car Search's browser."
+        return "unverified", "A Facebook cookie exists, but real Marketplace results could not be loaded in Car Search's browser."
     except PlaywrightTimeout:
-        return "unverified", "Timed out while checking Marketplace from Railway."
+        return "unverified", "Timed out while checking Marketplace from Car Search's browser."
     except Exception:
-        return "unverified", "Could not verify Facebook Marketplace access from Railway."
+        return "unverified", "Could not verify Facebook Marketplace access from Car Search's browser."
     finally:
         await page.close()
 
@@ -128,7 +128,7 @@ class FacebookConnection:
         if not path.is_file():
             if self.state == "connected" or self.state == "checking_saved":
                 self.state = "not_checked"
-                self.message = "No verified Facebook session found on Railway."
+                self.message = "No verified Facebook session found."
             return self.status()
         if self.state == "connected" and time.monotonic() - self.verified_at < 300:
             return self.status()
@@ -164,7 +164,7 @@ class FacebookConnection:
                     finally:
                         await browser.close()
                 self.state = "connected" if status == "connected" else "unverified"
-                self.message = ("Verified: Railway's browser can access Facebook Marketplace."
+                self.message = ("Verified: Car Search's browser can access Facebook Marketplace."
                                 if status == "connected" else detail)
                 self.last_stage = "Checked stored Facebook Marketplace session"
                 self.last_outcome = detail
@@ -172,7 +172,7 @@ class FacebookConnection:
                     self.verified_at = time.monotonic()
             except Exception:
                 self.state = "unverified"
-                self.message = "Could not verify Marketplace with the saved Railway session."
+                self.message = "Could not verify Marketplace with the saved Facebook session."
 
     async def reset(self):
         """Clear only the Railway Facebook session; preserve car searches/data."""
@@ -187,12 +187,12 @@ class FacebookConnection:
                     dest.unlink()
             except OSError:
                 self.state = "error"
-                self.message = "Could not clear the Railway Facebook session file."
+                self.message = "Could not clear the saved Facebook session."
                 return self.status()
             self.state = "not_checked"
             self.verified_at = 0
             self.last_stage = "Facebook browser session cleared"
-            self.last_outcome = ("Previous Railway Facebook cookies removed. New sign-in "
+            self.last_outcome = ("Previous Facebook session removed. New sign-in "
                                  "will use the current Railway environment variables.")
             self.message = ("Facebook session cleared. Ensure FACEBOOK_PASSWORD is correct "
                             "in Railway, then connect once. Other saved data is untouched."
@@ -221,7 +221,7 @@ class FacebookConnection:
             if facebook_profile.active().personal:
                 return ("invalid_credentials", "Facebook says your login details are incorrect. "
                         "Update your Facebook password in Car Search Settings and connect again.")
-            return ("invalid_credentials", "Facebook says the Railway login details are incorrect. "
+            return ("invalid_credentials", "Facebook says the login details are incorrect. "
                     "Update FACEBOOK_PASSWORD in Railway Variables, redeploy, and reset the server session.")
         if "account has been disabled" in body or "your account has been suspended" in body:
             return ("blocked", "Facebook is reporting an account restriction. Sign into Facebook directly to review it.")
@@ -248,7 +248,7 @@ class FacebookConnection:
         facebook_profile.active().saved()
         self.state = "connected"
         self.verified_at = time.monotonic()
-        self.message = "Verified: Railway's browser can access Facebook Marketplace."
+        self.message = "Verified: Car Search's browser can access Facebook Marketplace."
         await self._close()
 
     async def start(self):
@@ -268,7 +268,7 @@ class FacebookConnection:
             )
             return self.status()
         self.state = "connecting"
-        self.message = "Signing in and verifying Marketplace access in Railway…"
+        self.message = "Signing in and verifying Marketplace access…"
         self.task = asyncio.create_task(self.connect())
         return self.status()
 
@@ -278,11 +278,11 @@ class FacebookConnection:
                 return self.status()
             await self._close()
             self.state = "connecting"
-            self.message = "Checking Facebook Marketplace from Railway."
+            self.message = "Checking Facebook Marketplace from Car Search's browser."
             try:
                 await self._browser()
                 self.context = await facebook_context(self.browser)
-                self.last_stage = "Checking previous Railway Marketplace session"
+                self.last_stage = "Checking previous Marketplace session"
                 check, detail = await marketplace_probe(self.context)
                 if check == "connected":
                     await self._commit_verified()
@@ -331,7 +331,7 @@ class FacebookConnection:
                 await self.page.route("**/*", guard_owner_navigation)
                 self.last_stage = "Loading Facebook login form"
                 await self.page.goto("https://www.facebook.com/login", wait_until="domcontentloaded", timeout=30000)
-                self.last_stage = "Filling Railway login form"
+                self.last_stage = "Filling in Facebook's login form"
                 await self.page.locator('input[name="email"]').fill(email, timeout=14000)
                 await self.page.locator('input[name="pass"]').fill(password, timeout=14000)
                 # Treat login as a form: pressing Enter in the password
@@ -349,14 +349,14 @@ class FacebookConnection:
                 except PlaywrightTimeout:
                     submit_issue = "Pressing Enter in Facebook's password field timed out."
                 except PlaywrightError:
-                    submit_issue = "Railway could not send Enter to Facebook's password field."
+                    submit_issue = "Car Search could not send Enter to Facebook's password field."
                 self.last_stage = "Checking Facebook after keyboard submission"
                 if submit_issue:
                     self.last_outcome = submit_issue + " Marketplace is not verified."
                     # Do not attempt a second blind sign-in: keep the real
                     # browser page for inspection after the cooldown.
                     self.state = "error"
-                    self.message = self.last_outcome + " View Facebook's Railway screen to diagnose it."
+                    self.message = self.last_outcome + " View Car Search's Facebook screen to diagnose it."
                     return self.status()
                 await self.page.wait_for_timeout(1800)
                 feedback = await self.login_feedback()
@@ -367,7 +367,7 @@ class FacebookConnection:
                     return self.status()
                 check, detail = await marketplace_probe(self.context)
                 if check == "connected":
-                    self.last_outcome = "Railway loaded Marketplace content using its own session."
+                    self.last_outcome = "Marketplace loaded using the saved session."
                     await self._commit_verified()
                 elif check == "blocked":
                     self.last_outcome = detail
@@ -380,7 +380,7 @@ class FacebookConnection:
                     self.state = check
                     self.message = (detail +
                                     " The browser sent Enter to the password field but did not "
-                                    "confirm Marketplace access. View the Railway browser preview. "
+                                    "confirm Marketplace access. View Car Search's Facebook screen. "
                                     "Only enter a code or approve a notification if Facebook asks for it.")
                 return self.status()
             except Exception:
@@ -389,11 +389,11 @@ class FacebookConnection:
                 # possible so the owner can inspect it without repeating login.
                 stage = self.last_stage
                 self.state = "error"
-                self.last_outcome = f"Railway failed during: {stage}. Marketplace access is not confirmed."
+                self.last_outcome = f"Failed during: {stage}. Marketplace access is not confirmed."
                 if self.page and self.context:
                     self.started = self.started or time.monotonic()
                     self.message = (self.last_outcome +
-                                    " Open the Railway browser preview to diagnose the page "
+                                    " Open Car Search's Facebook screen to diagnose the page "
                                     "before attempting another login.")
                 else:
                     self.message = (self.last_outcome + " The server login browser is unavailable.")
@@ -413,7 +413,7 @@ class FacebookConnection:
                 self.state, self.message = "blocked", detail
                 await self._close()
             else:
-                self.state, self.message = check, (detail + " Check the Railway verification preview. "
+                self.state, self.message = check, (detail + " Check Car Search's Facebook screen. "
                     "Facebook may not issue a notification. Recheck only after taking any requested action.")
             return self.status()
 
@@ -470,7 +470,7 @@ class FacebookConnection:
             if parsed.scheme != "https" or not (
                 hostname == "facebook.com" or hostname.endswith(".facebook.com")
             ):
-                raise ValueError("The Railway browser left Facebook. Verification controls disabled.")
+                raise ValueError("Car Search's browser left Facebook. Verification controls disabled.")
             try:
                 if kind == "click":
                     if not (isinstance(x, (int, float)) and isinstance(y, (int, float))
@@ -507,7 +507,7 @@ class FacebookConnection:
                 self.interaction_count += 1
                 await self.page.wait_for_timeout(400)
                 self.last_stage = "Owner completing Facebook verification"
-                self.message = ("Action sent to the Railway Facebook screen. Continue if prompted, "
+                self.message = ("Action sent to the Facebook screen. Continue if prompted, "
                                 "then select Recheck Marketplace access.")
                 return self.status()
             except ValueError:
@@ -523,7 +523,7 @@ class FacebookConnection:
             try:
                 return await self.page.screenshot(type="jpeg", quality=68, full_page=False, timeout=15000)
             except Exception as exc:
-                raise ValueError("Facebook's Railway login page is not available for preview.") from exc
+                raise ValueError("Facebook's login page is not available for preview.") from exc
 
 
 connection = FacebookConnection()
