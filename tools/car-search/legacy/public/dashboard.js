@@ -1991,7 +1991,7 @@ setInterval(() => {
 setInterval(fbLoadStatus, 300000);
 async function fbConnect() {
   if (!$('facebookDialog').open) { show('facebookDialog'); void fbLoadAccount(); }
-  fbMessage('Checking Marketplace in Car Search's browser…');
+  fbMessage("Checking Marketplace in Car Search's browser…");
   const button = $('fbConnect');
   button.disabled = true;
   try {
