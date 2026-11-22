@@ -1456,7 +1456,7 @@ async function showCarLocation(ids) {
   }
   if (serial!==locationModalRequest || !dialog.open) return;
   if (!locationModalMap) {
-    locationModalMap=L.map(wrap,{scrollWheelZoom:false,zoomControl:true,minZoom:4,maxZoom:14});
+    locationModalMap=L.map(wrap,{scrollWheelZoom:true, touchZoom:true,zoomControl:true,minZoom:4,maxZoom:14});
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
       maxZoom:18,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
     }).addTo(locationModalMap);
@@ -1495,7 +1495,7 @@ async function showCarLocation(ids) {
   $('locationModalTitle').textContent=areaLabel;
   locationModalMap.setView([point.lat,point.lng],7);
   locationModalMarker=L.marker([point.lat,point.lng]).addTo(locationModalMap)
-    .bindPopup(esc(areaLabel)+'<br>Approximate advertised area').openPopup();
+    .bindPopup(esc(areaLabel)+'<br>'+esc(point.precision || 'Approximate advertised area')).openPopup();
   $('locationMapDescription').textContent='Showing the area around '+areaLabel+'. Zoom or pan to explore the region.';
   requestAnimationFrame(()=>locationModalMap.invalidateSize());
 }
@@ -1507,7 +1507,7 @@ function initListingMap() {
     $('mapSubtitle').textContent = 'Map resources are unavailable. Check that your browser can load Leaflet and OpenStreetMap.';
     return false;
   }
-  listingMap = L.map('listingMap', {scrollWheelZoom:false, zoomControl:true, minZoom:4, maxZoom:14});
+  listingMap = L.map('listingMap', {scrollWheelZoom:true, touchZoom:true, zoomControl:true, minZoom:4, maxZoom:14});
   listingMap.setView([54.4,-3.0],6);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom:18, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
