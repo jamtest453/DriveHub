@@ -37,13 +37,12 @@ def distance_hint(raw):
 def cache_key(raw):
     cleaned = clean_location(raw).casefold()
     miles = distance_hint(raw)
-    # v2 avoids reusing older negative results that ignored settlement type
-    # and gave ambiguous names like Hayes the wrong candidate.
+    # Refresh lookups made before ambiguous exact names could receive pins.
     postcode = POSTCODE.search(raw) if isinstance(raw, str) else None
     exact = ("|postcode:" + re.sub(r"\s+", "", postcode.group(1)).casefold()) if postcode else ""
     # Keep postcode, county and distance clues in the lookup identity even
     # though the card's display label omits them.
-    return cleaned + exact + ("|%.1fmi|placev4" % miles if miles else "|placev4")
+    return cleaned + exact + ("|%.1fmi|placev5" % miles if miles else "|placev5")
 
 
 
@@ -169,27 +168,34 @@ def find_place_detailed(results, name, hint, distance=None, origin=None):
             for field in ("county_unitary", "district_borough", "region", "country"))]
         if matching:
             exact = matching
-    if len(exact) > 1 and distance is not None and origin is not None:
-        choices = []
-        for row in exact:
-            point = valid_point(row, "", name)
-            if point:
-                delta = abs(great_circle_miles(origin["lat"], origin["lng"],
-                                              point["lat"], point["lng"]) - distance)
-                choices.append((delta, row))
-        choices.sort(key=lambda entry: entry[0])
-        if not choices or choices[0][0] > max(15, distance * .33):
-            return None, "ambiguous"
-        if len(choices) > 1 and choices[1][0] - choices[0][0] < max(6, distance * .065):
-            return None, "ambiguous"
-        chosen = choices[0][1]
-        precision = "Town centre inferred from advertised distance (approx.)"
-    elif len(exact) == 1:
+    exact = [row for row in exact if valid_point(row, "", name)]
+    if not exact:
+        return None, "unmatched"
+    precision = ("Town or locality name matched approximately" if near_match
+                 else "Town or city centre") + " (approx.)"
+    if len(exact) == 1:
         chosen = exact[0]
-        precision = ("Town or locality name matched approximately" if near_match
-                     else "Town or city centre") + " (approx.)"
     else:
-        return None, "ambiguous"
+        choices = []
+        if distance is not None and origin is not None:
+            for row in exact:
+                delta = abs(great_circle_miles(origin["lat"], origin["lng"],
+                                              float(row["latitude"]), float(row["longitude"])) - distance)
+                choices.append((delta, row))
+            choices.sort(key=lambda entry: entry[0])
+        plausible_distance = choices and choices[0][0] <= max(15, distance * .33)
+        if plausible_distance and choices[1][0] - choices[0][0] >= max(6, distance * .065):
+            chosen = choices[0][1]
+            precision = "Town centre inferred from advertised distance (approx.)"
+        elif near_match:
+            return None, "ambiguous"
+        else:
+            # Prefer the closest plausible mileage, then the largest settlement type.
+            # For equally ranked places, keep the geocoder's order.
+            ranked = [row for delta, row in choices if delta == choices[0][0]] if plausible_distance else exact
+            chosen = min(ranked, key=lambda row: PLACE_KINDS[row["local_type"].casefold()])
+            area = chosen.get("district_borough") or chosen.get("county_unitary")
+            precision = "Best guess (approx.)" + (f" · {area}" if area else "")
     point = valid_point(chosen, precision, str(chosen.get("name_1") or name))
     return (point, "mapped") if point else (None, "unmatched")
 
