@@ -87,20 +87,20 @@ def test_ambiguous_town_can_use_actual_advertised_distance_from_search_postcode(
          "latitude": 51.298, "longitude": -0.490},
     ]
     origin = {"lat": 53.48, "lng": -2.24}
-    assert find_place(places, "Ripley", "") is None
+    assert find_place(places, "Ripley", "")["precision"] == "Best guess (approx.) · Derbyshire"
     point = find_place(places, "Ripley", "", distance=46, origin=origin)
     assert point is not None
     assert point["label"] == "Ripley"
     assert point["precision"].startswith("Town centre inferred")
     assert abs(point["lat"] - 53.048) < .0001
-    assert find_place(places, "Ripley", "", distance=400, origin=origin) is None
-    # When two candidates would be indistinguishable from the distance,
-    # avoid a made-up precise pin.
+    assert find_place(places, "Ripley", "", distance=400, origin=origin)["precision"].startswith("Best guess")
+    # Similar advertised distances can still yield a clearly labelled guess.
     tied = [
         {"name_1":"Nelson","local_type":"Town","latitude":53.82,"longitude":-2.23},
         {"name_1":"Nelson","local_type":"Town","latitude":53.81,"longitude":-2.25},
     ]
-    assert find_place(tied, "Nelson", "", distance=26, origin=origin) is None
+    assert find_place(tied, "Nelson", "", distance=26, origin=origin)["lat"] == 53.82
+    assert find_place(tied, "Nelson", "", distance=26, origin=origin)["precision"] == "Best guess (approx.)"
 
 
 def test_hayes_mileage_disambiguates_across_settlement_types():
@@ -124,8 +124,8 @@ def test_hayes_mileage_disambiguates_across_settlement_types():
     point = find_place(alternatives,"Hayes","",distance=157,origin=manchester)
     assert point and point["lat"] == 51.508
     assert "inferred from advertised distance" in point["precision"]
-    assert find_place(alternatives,"Hayes","") is None
-    assert cache_key("Hayes (157 miles)").endswith("|placev4")
+    assert find_place(alternatives[::-1],"Hayes","")["lat"] == 51.372
+    assert cache_key("Hayes (157 miles)").endswith("|placev5")
 
 
 def test_exact_place_centres_and_ambiguous_locations():
@@ -135,7 +135,7 @@ def test_exact_place_centres_and_ambiguous_locations():
         {"name_1":"Newport","local_type":"Town","county_unitary":"Newport",
          "region":"Wales","latitude":51.585,"longitude":-2.998},
     ]
-    assert find_place(places, "Newport", "") is None
+    assert find_place(places, "Newport", "")["lat"] == 50.701
     selected = find_place(places, "Newport", "wales")
     assert selected["lat"] == 51.585
     assert "approx" in selected["precision"].lower()
@@ -184,7 +184,7 @@ async def test_map_only_lookup_writes_cache_and_does_not_repeat_requests(tmp_pat
     assert len(called) == 1
     assert (tmp_path / "location-map-cache.json").exists()
     stored = json.loads((tmp_path / "location-map-cache.json").read_text())
-    assert "manchester|placev4" in stored
+    assert "manchester|placev5" in stored
     await resolver.resolve(["Manchester"], tmp_path)
     assert len(called) == 1
 
@@ -231,7 +231,8 @@ def test_conservative_fuzzy_and_ambiguous_place_diagnostics():
         {"name_1": "Newport", "local_type": "Town", "county_unitary": "Isle of Wight",
          "latitude": 50.701, "longitude": -1.291},
     ]
-    assert find_place_detailed(newports, "Newport", "")[1] == "ambiguous"
+    point, status = find_place_detailed(newports, "Newport", "")
+    assert status == "mapped" and point["precision"].startswith("Best guess")
     located, status = find_place_detailed(newports, "Newport", "isle of wight")
     assert status == "mapped" and located["lat"] == 50.701
 
